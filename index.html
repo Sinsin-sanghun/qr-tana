@@ -172,10 +172,11 @@ function stocksFor(shelf){
     m[t.item_id]=(m[t.item_id]||0)+Number(t.qty); }
   return m;
 }
+function txTime(t){return t.tx_date?new Date(t.tx_date+'T00:00:00').getTime():new Date(t.created_at).getTime();}
 function out30(shelf,itemId){
   const lim=Date.now()-30*864e5; let s=0;
   for(const t of TX){ if(t.kind!=='out')continue; if(shelf&&t.shelf_code!==shelf)continue;
-    if(t.item_id!==itemId)continue; if(new Date(t.created_at).getTime()<lim)continue; s+=-Number(t.qty);}
+    if(t.item_id!==itemId)continue; if(txTime(t)<lim)continue; s+=-Number(t.qty);}
   return s;
 }
 function judge(qty,o30,minq){
@@ -187,6 +188,8 @@ function judge(qty,o30,minq){
 }
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2200);}
 function fmtD(s){const d=new Date(s);return (d.getMonth()+1)+'/'+d.getDate();}
+function txD(t){return fmtD(t.tx_date?t.tx_date+'T00:00:00':t.created_at);}
+function siteTxt(t){return t.site?(t.kind==='in'?'仕入: ':'→ ')+esc(t.site):'';}
 
 /* ---------- views ---------- */
 function render(){
@@ -227,7 +230,7 @@ function renderItem(it){
   }).join('');
   const hist=TX.filter(t=>t.item_id===it.id).slice(0,15).map(t=>{
     const cls=t.kind==='out'?'out':t.kind==='in'?'in':'adj';const sign=Number(t.qty)>0?'+':'';
-    return `<div class="hist">${fmtD(t.created_at)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ｜ ${esc(t.shelf_code)} ${t.site?'→ '+esc(t.site):''} ${t.created_by?'('+esc(t.created_by)+')':''}</div>`;
+    return `<div class="hist">${txD(t)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ｜ ${esc(t.shelf_code)} ${siteTxt(t)} ${t.created_by?'('+esc(t.created_by)+')':''}</div>`;
   }).join('')||'<div class="empty">記録なし</div>';
   $('app').innerHTML=`
     <div class="card">
@@ -272,7 +275,7 @@ function renderDash(){
   const recent=TX.slice(0,15).map(t=>{const it=itemById(t.item_id);
     const cls=t.kind==='out'?'out':t.kind==='in'?'in':'adj';
     const sign=Number(t.qty)>0?'+':'';
-    return `<div class="hist">${fmtD(t.created_at)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ${esc(it?.name||'')} ｜ ${esc(t.shelf_code)} ${t.site?'→ '+esc(t.site):''}</div>`;}).join('')||'<div class="empty">まだ記録がありません</div>';
+    return `<div class="hist">${txD(t)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ${esc(it?.name||'')} ｜ ${esc(t.shelf_code)} ${siteTxt(t)}</div>`;}).join('')||'<div class="empty">まだ記録がありません</div>';
   $('app').innerHTML=`
     <div class="chips"><span class="chip cr">🚨 不足 ${nR}</span><span class="chip ca">⚠️ 注意 ${nA}</span><span class="chip cg">✅ 十分 ${nG}</span><span class="chip cn">棚 ${SHELVES.length}</span><span class="chip cn" style="cursor:pointer" onclick="doLogout()">👤 ${esc(MENAME)}｜ログアウト</span></div>
     <button class="shipbtn" onclick="NEWSHIP=null;location.hash='newship'">🚚 出荷リストを作成（現場へ資材を送る）</button>
@@ -312,7 +315,7 @@ function renderShelf(s){
     <h2>この棚の記録</h2><div class="card">${
       TX.filter(t=>t.shelf_code===s.code).slice(0,20).map(t=>{const it=itemById(t.item_id);
       const cls=t.kind==='out'?'out':t.kind==='in'?'in':'adj';const sign=Number(t.qty)>0?'+':'';
-      return `<div class="hist">${fmtD(t.created_at)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ${esc(it?.name||'')} ${t.site?'→ '+esc(t.site):''} ${t.created_by?'('+esc(t.created_by)+')':''}</div>`;}).join('')||'<div class="empty">記録なし</div>'}</div>`;
+      return `<div class="hist">${txD(t)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ${esc(it?.name||'')} ${siteTxt(t)} ${t.created_by?'('+esc(t.created_by)+')':''}</div>`;}).join('')||'<div class="empty">記録なし</div>'}</div>`;
 }
 
 /* ---------- modals ---------- */
@@ -320,12 +323,19 @@ function openMd(html){$('md').innerHTML=html;$('ov').classList.add('on');}
 function closeMd(){$('ov').classList.remove('on');}
 $('ov').addEventListener('click',e=>{if(e.target.id==='ov')closeMd();});
 
+function vendorList(){
+  const s=new Set();
+  TX.forEach(t=>{if(t.kind==='in'&&t.site)s.add(t.site);});
+  return [...s].slice(0,20);
+}
 window.mvModal=function(iid,shelf,kind){
   const it=itemById(iid); const who=localStorage.getItem('qr_who')||'';
   openMd(`<h3>${kind==='out'?'− 出庫':'＋ 入庫'} — ${esc(it?.name)}</h3>
+    ${kind==='in'?`<label>入庫日（届いた日）</label><input id="mDate" type="date" value="${todayStr()}">`:''}
     <label>数量（${esc(it?.unit||'')}）</label><input id="mQty" type="number" inputmode="decimal" min="0.1" step="any">
     <div class="qbtns">${[1,2,5,10].map(n=>`<button onclick="$('mQty').value=${n}">${n}</button>`).join('')}</div>
-    ${kind==='out'?'<label>行き先（現場名・任意）</label><input id="mSite" placeholder="例: 石山現場">':''}
+    ${kind==='out'?'<label>行き先（現場名・任意）</label><input id="mSite" placeholder="例: 石山現場">':`<label>仕入先・取引先（どこから届いたか）</label><input id="mSite" list="vendorDL" placeholder="例: 新明電材 / 田中商事">
+    <datalist id="vendorDL">${vendorList().map(v=>`<option value="${esc(v)}">`).join('')}</datalist>`}
     <label>担当（任意・次回も記憶）</label><input id="mWho" value="${esc(who)}" placeholder="例: 李">
     <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
     <button class="mok ${kind}" onclick="doMove(${iid},'${shelf}','${kind}')">${kind==='out'?'出庫を記録':'入庫を記録'}</button></div>`);
@@ -339,8 +349,9 @@ window.doMove=async function(iid,shelf,kind){
     const cur=stocksFor(shelf)[iid]||0;
     if(q>cur&&!confirm(`現在庫 ${cur} より多い出庫です。よろしいですか？`))return;
   }
+  const txd=($('mDate')?.value||todayStr());
   try{
-    await api('qr_transactions',{method:'POST',body:JSON.stringify({shelf_code:shelf,item_id:iid,qty:kind==='out'?-q:q,kind,site,created_by:who})});
+    await api('qr_transactions',{method:'POST',body:JSON.stringify({shelf_code:shelf,item_id:iid,qty:kind==='out'?-q:q,kind,site,created_by:who,tx_date:txd})});
     await loadAll();closeMd();render();toast(kind==='out'?'出庫を記録しました':'入庫を記録しました');
   }catch(e){toast('エラー: 記録できませんでした');console.error(e);}
 };
@@ -712,7 +723,7 @@ window.submitShip=async function(){
     const sid=sp[0].id;
     await api('qr_transactions',{method:'POST',body:JSON.stringify(NEWSHIP.lines.map(l=>({
       shelf_code:l.shelf,item_id:l.item_id,qty:-l.qty,kind:'out',site:NEWSHIP.site.trim(),
-      shipment_id:sid,created_by:localStorage.getItem('qr_who')||MENAME})))});
+      shipment_id:sid,created_by:localStorage.getItem('qr_who')||MENAME,tx_date:NEWSHIP.date})))});
     NEWSHIP=null;
     await loadAll();location.hash='S-'+sid;render();toast('出荷リストを発行しました');
   }catch(e){toast('エラー: 発行できませんでした');console.error(e);}
