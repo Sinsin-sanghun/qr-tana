@@ -111,11 +111,14 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 </div>
 <input type="file" id="phFile" accept="image/*" style="display:none">
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 const URL0='https://ndbqaphghlfcsfkfwbnn.supabase.co/rest/v1/';
 const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kYnFhcGhnaGxmY3Nma2Z3Ym5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NTExNTIsImV4cCI6MjA5NDMyNzE1Mn0.F_iAEpv8yz7Cyy6ra6svJa8GdZnoyguayxAsFSuEcrY';
 const H={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
-let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],PINHASH='';
+const sb=window.supabase.createClient('https://ndbqaphghlfcsfkfwbnn.supabase.co',KEY);
+let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],PINHASH='';
+let SESSION=null,ME='',MENAME='',ISADMIN=false,READY=false;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -126,16 +129,18 @@ async function api(path,opt){
 }
 async function loadAll(){
   let ST;
-  [SHELVES,ITEMS,TX,REQS,PHOTOS,ST]=await Promise.all([
+  [SHELVES,ITEMS,TX,REQS,PHOTOS,ARS,ST]=await Promise.all([
     api('qr_shelves?select=*&order=sort'),
     api('qr_items?select=*&order=item_code&limit=5000'),
     api('qr_transactions?select=*&order=created_at.desc&limit=10000'),
     api('qr_change_requests?select=*&order=created_at.desc&limit=200'),
     api('qr_item_photos?select=*&order=sort,id&limit=10000'),
+    ISADMIN?api('qr_access_requests?select=*&order=created_at.desc&limit=100'):Promise.resolve([]),
     api('qr_settings?key=eq.approval_pin_hash&select=value')
   ]);
   PINHASH=ST?.[0]?.value||'';
 }
+function pendingARs(){return (ARS||[]).filter(r=>r.status==='pending');}
 function photosFor(iid){return PHOTOS.filter(p=>p.item_id===iid);}
 async function sha256(s){
   const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
@@ -167,7 +172,7 @@ function fmtD(s){const d=new Date(s);return (d.getMonth()+1)+'/'+d.getDate();}
 
 /* ---------- views ---------- */
 function render(){
-  const n=pendingReqs().length;
+  const n=pendingReqs().length+(ISADMIN?pendingARs().length:0);
   $('hAppr').textContent=n?`✅ 承認(${n})`:'✅ 承認';
   const h=decodeURIComponent(location.hash.replace('#',''));
   if(h==='approvals'){renderApprovals();window.scrollTo(0,0);return;}
@@ -202,7 +207,7 @@ function renderDash(){
     const sign=Number(t.qty)>0?'+':'';
     return `<div class="hist">${fmtD(t.created_at)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ${esc(it?.name||'')} ｜ ${esc(t.shelf_code)} ${t.site?'→ '+esc(t.site):''}</div>`;}).join('')||'<div class="empty">まだ記録がありません</div>';
   $('app').innerHTML=`
-    <div class="chips"><span class="chip cr">🚨 不足 ${nR}</span><span class="chip ca">⚠️ 注意 ${nA}</span><span class="chip cg">✅ 十分 ${nG}</span><span class="chip cn">棚 ${SHELVES.length}</span></div>
+    <div class="chips"><span class="chip cr">🚨 不足 ${nR}</span><span class="chip ca">⚠️ 注意 ${nA}</span><span class="chip cg">✅ 十分 ${nG}</span><span class="chip cn">棚 ${SHELVES.length}</span><span class="chip cn" style="cursor:pointer" onclick="doLogout()">👤 ${esc(MENAME)}｜ログアウト</span></div>
     <h2>棚一覧（タップで棚ページへ）</h2><div class="shelfgrid">${shelfHtml}</div>
     <h2>要対応（不足・注意）</h2>${shortHtml}
     <h2>最近の記録</h2><div class="card">${recent}</div>`;
@@ -400,11 +405,33 @@ function renderApprovals(){
     const it=itemById(r.item_id);
     return `<div class="hist">${fmtD(r.created_at)} ${r.rtype==='delete'?'削除':'数量修正'} ${esc(it?.name||'')} ｜ ${esc(r.shelf_code)} → <b class="${r.status==='approved'?'in':'out'}">${r.status==='approved'?'承認済':'却下'}</b></div>`;
   }).join('')||'<div class="empty">履歴なし</div>';
+  const uPend=ISADMIN?pendingARs():[];
+  const uRows=uPend.map(r=>`<div class="card warn">
+      <div class="iname">👤 ${esc(r.name||'(名前未入力)')}</div>
+      <div class="imeta">${esc(r.email)} ・ ${fmtD(r.created_at)} 申請</div>
+      <div class="btnrow">
+        <button class="bin" onclick="userDecide(${r.id},'approve')">✅ アクセスを承認</button>
+        <button class="bset" style="flex:1" onclick="userDecide(${r.id},'reject')">✖ 却下</button>
+      </div></div>`).join('');
   $('app').innerHTML=`
-    <div class="chips"><span class="chip ${pend.length?'cr':'cn'}">承認待ち ${pend.length}件</span><span class="chip cn">最終承認者: 李相勲</span></div>
+    <div class="chips"><span class="chip ${(pend.length+uPend.length)?'cr':'cn'}">承認待ち ${pend.length+uPend.length}件</span><span class="chip cn">最終承認者: 李相勲</span></div>
+    ${ISADMIN?`<h2>👤 ユーザー承認（アクセス申請）</h2>${uRows||'<div class="empty">アクセス申請はありません</div>'}`:''}
+    <h2>📦 在庫の修正・削除申請</h2>
     ${rows}
     <h2>処理済み（直近10件）</h2><div class="card">${done}</div>`;
 }
+window.userDecide=async function(id,action){
+  const r=ARS.find(x=>x.id===id); if(!r)return;
+  if(!confirm((action==='approve'?'アクセス承認':'却下')+': '+r.email+' でよろしいですか？'))return;
+  try{
+    if(action==='approve'){
+      await api('qr_allowed_users?on_conflict=email',{method:'POST',headers:Object.assign({},H,{'Prefer':'resolution=merge-duplicates'}),
+        body:JSON.stringify({email:(r.email||'').toLowerCase(),name:r.name||'',role:'member',approved_by:ME})});
+    }
+    await api('qr_access_requests?id=eq.'+id,{method:'PATCH',body:JSON.stringify({status:action==='approve'?'approved':'rejected',decided_by:ME,decided_at:new Date().toISOString()})});
+    await loadAll();render();toast(action==='approve'?'アクセスを承認しました':'却下しました');
+  }catch(e){toast('エラー');console.error(e);}
+};
 window.decideReq=async function(id,action){
   const req=REQS.find(r=>r.id===id); if(!req)return;
   openMd(`<h3>${action==='approve'?'✅ 承認':'✖ 却下'}の確認</h3>
@@ -488,7 +515,7 @@ $('phFile').addEventListener('change',async e=>{
     const it=itemById(PH_TARGET);
     const name=((it?.item_code||('id'+PH_TARGET)).replace(/[^A-Za-z0-9_-]/g,''))+'_'+Date.now()+'.jpg';
     const r=await fetch('https://ndbqaphghlfcsfkfwbnn.supabase.co/storage/v1/object/qr-photos/'+name,
-      {method:'POST',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'image/jpeg','x-upsert':'true'},body:blob});
+      {method:'POST',headers:{'apikey':KEY,'Authorization':H.Authorization,'Content-Type':'image/jpeg','x-upsert':'true'},body:blob});
     if(!r.ok)throw new Error(await r.text());
     const url='https://ndbqaphghlfcsfkfwbnn.supabase.co/storage/v1/object/public/qr-photos/'+name;
     const nsort=photosFor(PH_TARGET).length;
@@ -500,9 +527,73 @@ $('phFile').addEventListener('change',async e=>{
   finally{PH_TARGET=null;}
 });
 
+/* ---------- 認証（Googleログイン + 承認制アクセス） ---------- */
+async function rpcBool(fn){
+  try{const r=await fetch(URL0+'rpc/'+fn,{method:'POST',headers:H,body:'{}'});
+    if(!r.ok)return false; return (await r.json())===true;}catch(e){return false;}
+}
+function renderLogin(){
+  $('hAppr').textContent='';
+  $('app').innerHTML=`<div style="max-width:400px;margin:50px auto;text-align:center">
+    <div class="card" style="padding:30px 22px">
+      <div style="font-size:2.6rem">📦🔒</div>
+      <h2 style="justify-content:center;margin:10px 0">QR棚管理システム</h2>
+      <p style="font-size:.85rem;color:var(--gray);margin-bottom:18px">このページは承認されたメンバーのみ閲覧できます。<br>Googleアカウントでログインしてください。</p>
+      <button class="mok" style="width:100%;padding:14px 0;font-size:1rem" onclick="doLogin()">G　Googleでログイン</button>
+    </div></div>`;
+}
+async function renderWait(){
+  $('hAppr').textContent='';
+  let myReq=[];
+  try{myReq=await api('qr_access_requests?select=*&email=eq.'+encodeURIComponent(ME)+'&order=created_at.desc&limit=1')||[];}catch(e){}
+  const pending=myReq[0]&&myReq[0].status==='pending';
+  const rejected=myReq[0]&&myReq[0].status==='rejected';
+  $('app').innerHTML=`<div style="max-width:420px;margin:40px auto;text-align:center">
+    <div class="card" style="padding:26px 22px">
+      <div style="font-size:2.4rem">${pending?'⏳':rejected?'🚫':'🙋'}</div>
+      <h2 style="justify-content:center;margin:10px 0">${pending?'承認待ちです':rejected?'アクセスが却下されました':'アクセス申請'}</h2>
+      <p style="font-size:.83rem;color:var(--gray)">ログイン中: <b>${esc(ME)}</b></p>
+      ${pending?`<p style="font-size:.85rem;color:var(--gray);margin:12px 0">管理者（李相勲）の承認をお待ちください。<br>承認後に下のボタンで再確認してください。</p>
+        <button class="mok" style="width:100%;padding:12px 0;margin-top:8px" onclick="location.reload()">🔄 承認されたか確認</button>`
+      :rejected?`<p style="font-size:.85rem;color:var(--gray);margin:12px 0">管理者にお問い合わせください。</p>`
+      :`<p style="font-size:.85rem;color:var(--gray);margin:10px 0">このアカウントはまだ承認されていません。<br>お名前を入力して申請してください。</p>
+        <input id="reqName" placeholder="お名前（例: 染谷）" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;margin:8px 0">
+        <button class="mok in" style="width:100%;padding:12px 0" onclick="reqAccess()">アクセスを申請する</button>`}
+      <button class="mcancel" style="width:100%;padding:11px 0;margin-top:10px" onclick="doLogout()">別のアカウントでログイン</button>
+    </div></div>`;
+}
+window.reqAccess=async function(){
+  const name=($('reqName')?.value||'').trim();
+  if(!name){toast('お名前を入力してください');return;}
+  try{
+    await api('qr_access_requests',{method:'POST',body:JSON.stringify({email:ME,name})});
+    renderWait();toast('申請しました');
+  }catch(e){toast('エラー');console.error(e);}
+};
+window.doLogin=async function(){
+  localStorage.setItem('qr_hash',location.hash||'');
+  await sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});
+};
+window.doLogout=async function(){await sb.auth.signOut();localStorage.removeItem('qr_hash');location.hash='';location.reload();};
+
 /* ---------- boot ---------- */
-window.addEventListener('hashchange',render);
-(async()=>{try{await loadAll();render();}catch(e){$('app').innerHTML='<div class="empty">読み込みエラー。通信環境をご確認ください。</div>';console.error(e);}})();
+window.addEventListener('hashchange',()=>{if(READY)render();});
+sb.auth.onAuthStateChange((ev,sess)=>{if(sess){H.Authorization='Bearer '+sess.access_token;}});
+(async()=>{
+  try{
+    const {data}=await sb.auth.getSession(); SESSION=data.session;
+    if(!SESSION){renderLogin();return;}
+    H.Authorization='Bearer '+SESSION.access_token;
+    ME=(SESSION.user?.email||'').toLowerCase();
+    MENAME=SESSION.user?.user_metadata?.name||ME.split('@')[0];
+    const saved=localStorage.getItem('qr_hash');
+    if(saved&&!location.hash){history.replaceState(null,'',location.pathname+saved);}
+    localStorage.removeItem('qr_hash');
+    if(!await rpcBool('qr_is_allowed')){renderWait();return;}
+    ISADMIN=await rpcBool('qr_is_admin');
+    await loadAll();READY=true;render();
+  }catch(e){$('app').innerHTML='<div class="empty">読み込みエラー。通信環境をご確認ください。</div>';console.error(e);}
+})();
 </script>
 </body>
 </html>
