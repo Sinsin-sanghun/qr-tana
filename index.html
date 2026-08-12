@@ -305,7 +305,7 @@ window.fixModal=function(iid,shelf){
     <label>理由</label><input id="fReason" placeholder="例: 入力ミス / テストデータ削除">
     <label>申請者</label><input id="fWho" value="${esc(who)}" placeholder="例: 李">
     <label>承認コード（李相勲のみ・空欄なら承認待ちに登録）</label>
-    <input id="fPin" type="password" inputmode="numeric" placeholder="即時実行する場合のみ入力">
+    <input id="fPin" type="password" placeholder="即時実行する場合のみ入力">
     <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
     <button class="mok" onclick="submitFix(${iid},'${shelf}')">送信</button></div>`);
 };
@@ -370,7 +370,7 @@ window.decideReq=async function(id,action){
   const req=REQS.find(r=>r.id===id); if(!req)return;
   openMd(`<h3>${action==='approve'?'✅ 承認':'✖ 却下'}の確認</h3>
     <label>承認コード（李相勲）</label>
-    <input id="aPin" type="password" inputmode="numeric">
+    <input id="aPin" type="password">
     <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
     <button class="mok ${action==='approve'?'in':''}" onclick="doDecide(${id},'${action}')">${action==='approve'?'承認して反映':'却下する'}</button></div>`);
   setTimeout(()=>$('aPin').focus(),100);
