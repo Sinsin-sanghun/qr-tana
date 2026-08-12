@@ -67,9 +67,22 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 .loading{text-align:center;color:var(--gray);padding:40px 0}
 .thumb{width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--line);flex-shrink:0}
 .thumb-e{width:56px;height:56px;border-radius:8px;border:1.5px dashed #b9cbdc;color:#b9cbdc;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0}
-.lb{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;z-index:120}
+.lb{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:120;touch-action:pan-y}
 .lb.on{display:flex}
-.lb img{max-width:94vw;max-height:88vh;border-radius:8px}
+.lb img{max-width:94vw;max-height:74vh;border-radius:8px;user-select:none;-webkit-user-drag:none}
+.lbtop{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:14px 18px;color:#fff}
+.lbcnt{font-size:.9rem;font-weight:700;opacity:.9}
+.lbx{background:rgba(255,255,255,.15);color:#fff;border-radius:50%;width:38px;height:38px;font-size:1.1rem}
+.lbdots{display:flex;gap:7px;margin-top:16px}
+.lbdot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.35)}
+.lbdot.on{background:#fff}
+.lbnavL,.lbnavR{position:absolute;top:0;bottom:0;width:33%;}
+.lbnavL{left:0}.lbnavR{right:0}
+.lbbtm{position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:center;gap:12px;padding:16px}
+.lbbtn{background:rgba(255,255,255,.15);color:#fff;border-radius:20px;padding:9px 20px;font-size:.85rem}
+.lbbtn.del{background:rgba(197,48,48,.55)}
+.thwrap{position:relative;flex-shrink:0}
+.phn{position:absolute;right:-5px;top:-5px;background:var(--navy);color:#fff;border-radius:10px;font-size:.62rem;padding:1px 6px;font-weight:700;border:1.5px solid #fff}
 .pk{display:flex;gap:9px;align-items:center}
 .pkt{width:42px;height:42px;border-radius:6px;object-fit:cover;flex-shrink:0;border:1px solid var(--line)}
 .pkt-e{width:42px;height:42px;border-radius:6px;border:1px dashed #d3dee9;flex-shrink:0}
@@ -85,14 +98,24 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 <div class="wrap" id="app"><div class="loading">読み込み中…</div></div>
 <div class="ov" id="ov"><div class="md" id="md"></div></div>
 <div class="toast" id="toast"></div>
-<div class="lb" id="lb" onclick="this.classList.remove('on')"><img id="lbImg" alt=""></div>
+<div class="lb" id="lb">
+  <div class="lbtop"><span class="lbcnt" id="lbCnt"></span><button class="lbx" onclick="lbClose()">✕</button></div>
+  <div class="lbnavL" onclick="lbNav(-1)"></div>
+  <img id="lbImg" alt="">
+  <div class="lbnavR" onclick="lbNav(1)"></div>
+  <div class="lbdots" id="lbDots"></div>
+  <div class="lbbtm">
+    <button class="lbbtn" onclick="lbAdd()">📷 写真を追加</button>
+    <button class="lbbtn del" onclick="lbDel()">🗑 この写真を削除</button>
+  </div>
+</div>
 <input type="file" id="phFile" accept="image/*" style="display:none">
 
 <script>
 const URL0='https://ndbqaphghlfcsfkfwbnn.supabase.co/rest/v1/';
 const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kYnFhcGhnaGxmY3Nma2Z3Ym5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NTExNTIsImV4cCI6MjA5NDMyNzE1Mn0.F_iAEpv8yz7Cyy6ra6svJa8GdZnoyguayxAsFSuEcrY';
 const H={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
-let SHELVES=[],ITEMS=[],TX=[],REQS=[],PINHASH='';
+let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],PINHASH='';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -103,15 +126,17 @@ async function api(path,opt){
 }
 async function loadAll(){
   let ST;
-  [SHELVES,ITEMS,TX,REQS,ST]=await Promise.all([
+  [SHELVES,ITEMS,TX,REQS,PHOTOS,ST]=await Promise.all([
     api('qr_shelves?select=*&order=sort'),
     api('qr_items?select=*&order=item_code&limit=5000'),
     api('qr_transactions?select=*&order=created_at.desc&limit=10000'),
     api('qr_change_requests?select=*&order=created_at.desc&limit=200'),
+    api('qr_item_photos?select=*&order=sort,id&limit=10000'),
     api('qr_settings?key=eq.approval_pin_hash&select=value')
   ]);
   PINHASH=ST?.[0]?.value||'';
 }
+function photosFor(iid){return PHOTOS.filter(p=>p.item_id===iid);}
 async function sha256(s){
   const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
   return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -188,7 +213,8 @@ function renderShelf(s){
   const rows=Object.entries(st).filter(([,q])=>q!==0).map(([iid,q])=>{
     const it=itemById(+iid); const o=out30(s.code,+iid); const j=judge(q,o,it?.min_qty);
     const leftTxt=j.left?` ・ 在庫切れまで約${Math.round(j.left)}日`:'';
-    const th=it?.photo_url?`<img class="thumb" src="${esc(it.photo_url)}" loading="lazy" onclick="showPh('${esc(it.photo_url)}')">`:`<div class="thumb-e" onclick="phStart(${iid})">📷</div>`;
+    const phs=photosFor(+iid);
+    const th=phs.length?`<div class="thwrap" onclick="showPhs(${iid})"><img class="thumb" src="${esc(phs[0].url)}" loading="lazy">${phs.length>1?`<span class="phn">+${phs.length-1}</span>`:''}</div>`:`<div class="thumb-e" onclick="phStart(${iid})">📷</div>`;
     return `<div class="card ${j.k==='br'?'warn':''}">
       <div class="itemrow">
         ${th}
@@ -270,7 +296,7 @@ window.addModal=function(shelf){
 window.pickList=function(shelf){
   const q=($('mSearch').value||'').toLowerCase();
   const hits=ITEMS.filter(i=>!q||(i.name+' '+(i.model||'')+' '+(i.item_code||'')).toLowerCase().includes(q)).slice(0,40);
-  $('mPick').innerHTML=hits.map(i=>`<div class="pk" onclick="initQty(${i.id},'${shelf}')">${i.photo_url?`<img class="pkt" src="${esc(i.photo_url)}" loading="lazy">`:'<div class="pkt-e"></div>'}<div style="flex:1"><b>${esc(i.name)}</b><div class="m">${esc(i.item_code||'')} ${esc(i.model||'')} ・ ${esc(i.package||'')}</div></div></div>`).join('')||'<div class="pk">該当なし → 下の「新規資材を作成」へ</div>';
+  $('mPick').innerHTML=hits.map(i=>{const p=photosFor(i.id)[0];return `<div class="pk" onclick="initQty(${i.id},'${shelf}')">${p?`<img class="pkt" src="${esc(p.url)}" loading="lazy">`:'<div class="pkt-e"></div>'}<div style="flex:1"><b>${esc(i.name)}</b><div class="m">${esc(i.item_code||'')} ${esc(i.model||'')} ・ ${esc(i.package||'')}</div></div></div>`;}).join('')||'<div class="pk">該当なし → 下の「新規資材を作成」へ</div>';
 };
 window.initQty=function(iid,shelf){
   const it=itemById(iid);
@@ -401,7 +427,44 @@ window.doDecide=async function(id,action){
 
 /* ---------- 写真 ---------- */
 let PH_TARGET=null;
-window.showPh=function(u){$('lbImg').src=u;$('lb').classList.add('on');};
+let LB={iid:null,idx:0};
+window.showPhs=function(iid){
+  const phs=photosFor(iid); if(!phs.length){phStart(iid);return;}
+  LB.iid=iid; LB.idx=0; lbRender();
+  $('lb').classList.add('on');
+};
+function lbRender(){
+  const phs=photosFor(LB.iid);
+  if(!phs.length){lbClose();return;}
+  if(LB.idx>=phs.length)LB.idx=phs.length-1;
+  if(LB.idx<0)LB.idx=0;
+  $('lbImg').src=phs[LB.idx].url;
+  $('lbCnt').textContent=(LB.idx+1)+' / '+phs.length;
+  $('lbDots').innerHTML=phs.map((_,i)=>`<span class="lbdot ${i===LB.idx?'on':''}"></span>`).join('');
+}
+window.lbNav=function(d){
+  const phs=photosFor(LB.iid); if(phs.length<2)return;
+  LB.idx=(LB.idx+d+phs.length)%phs.length; lbRender();
+};
+window.lbClose=function(){$('lb').classList.remove('on');};
+window.lbAdd=function(){phStart(LB.iid);};
+window.lbDel=async function(){
+  const phs=photosFor(LB.iid); const ph=phs[LB.idx]; if(!ph)return;
+  if(!confirm('この写真を削除しますか？'))return;
+  try{
+    await api('qr_item_photos?id=eq.'+ph.id,{method:'DELETE'});
+    await loadAll();
+    if(!photosFor(LB.iid).length){lbClose();render();}else{lbRender();render();}
+    toast('写真を削除しました');
+  }catch(e){toast('エラー');console.error(e);}
+};
+/* Instagram風スワイプ */
+let SW={x:0,y:0};
+$('lb').addEventListener('touchstart',e=>{SW.x=e.touches[0].clientX;SW.y=e.touches[0].clientY;},{passive:true});
+$('lb').addEventListener('touchend',e=>{
+  const dx=e.changedTouches[0].clientX-SW.x, dy=e.changedTouches[0].clientY-SW.y;
+  if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.4){lbNav(dx<0?1:-1);}
+},{passive:true});
 window.phStart=function(iid){PH_TARGET=iid;$('phFile').value='';$('phFile').click();};
 function shrink(file,max,q){
   return new Promise((res,rej)=>{
@@ -428,8 +491,11 @@ $('phFile').addEventListener('change',async e=>{
       {method:'POST',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'image/jpeg','x-upsert':'true'},body:blob});
     if(!r.ok)throw new Error(await r.text());
     const url='https://ndbqaphghlfcsfkfwbnn.supabase.co/storage/v1/object/public/qr-photos/'+name;
-    await api('qr_items?id=eq.'+PH_TARGET,{method:'PATCH',body:JSON.stringify({photo_url:url})});
-    await loadAll();render();toast('写真を登録しました');
+    const nsort=photosFor(PH_TARGET).length;
+    await api('qr_item_photos',{method:'POST',body:JSON.stringify({item_id:PH_TARGET,url,sort:nsort,created_by:localStorage.getItem('qr_who')||''})});
+    const tgt=PH_TARGET;
+    await loadAll();render();toast('写真を追加しました');
+    if($('lb').classList.contains('on')&&LB.iid===tgt){LB.idx=photosFor(tgt).length-1;lbRender();}
   }catch(err){toast('写真の登録に失敗しました');console.error(err);}
   finally{PH_TARGET=null;}
 });
