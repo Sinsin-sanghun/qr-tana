@@ -71,7 +71,7 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center">
     <div><div class="t" id="hTitle">📦 QR棚管理</div><div class="s" id="hSub">しろくま電力 購買部 ・ 野田倉庫</div></div>
-    <a href="#" id="hHome">🏠 全体</a>
+    <div style="text-align:right"><a href="#approvals" id="hAppr">✅ 承認</a>　<a href="#" id="hHome">🏠 全体</a></div>
   </div>
 </header>
 <div class="wrap" id="app"><div class="loading">読み込み中…</div></div>
@@ -82,7 +82,7 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 const URL0='https://ndbqaphghlfcsfkfwbnn.supabase.co/rest/v1/';
 const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kYnFhcGhnaGxmY3Nma2Z3Ym5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NTExNTIsImV4cCI6MjA5NDMyNzE1Mn0.F_iAEpv8yz7Cyy6ra6svJa8GdZnoyguayxAsFSuEcrY';
 const H={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
-let SHELVES=[],ITEMS=[],TX=[];
+let SHELVES=[],ITEMS=[],TX=[],REQS=[],PINHASH='';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -92,12 +92,21 @@ async function api(path,opt){
   const t=await r.text(); return t?JSON.parse(t):null;
 }
 async function loadAll(){
-  [SHELVES,ITEMS,TX]=await Promise.all([
+  let ST;
+  [SHELVES,ITEMS,TX,REQS,ST]=await Promise.all([
     api('qr_shelves?select=*&order=sort'),
     api('qr_items?select=*&order=item_code&limit=5000'),
-    api('qr_transactions?select=*&order=created_at.desc&limit=10000')
+    api('qr_transactions?select=*&order=created_at.desc&limit=10000'),
+    api('qr_change_requests?select=*&order=created_at.desc&limit=200'),
+    api('qr_settings?key=eq.approval_pin_hash&select=value')
   ]);
+  PINHASH=ST?.[0]?.value||'';
 }
+async function sha256(s){
+  const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function pendingReqs(){return REQS.filter(r=>r.status==='pending');}
 function itemById(id){return ITEMS.find(i=>i.id===id);}
 function stocksFor(shelf){
   const m={};
@@ -123,7 +132,10 @@ function fmtD(s){const d=new Date(s);return (d.getMonth()+1)+'/'+d.getDate();}
 
 /* ---------- views ---------- */
 function render(){
+  const n=pendingReqs().length;
+  $('hAppr').textContent=n?`✅ 承認(${n})`:'✅ 承認';
   const h=decodeURIComponent(location.hash.replace('#',''));
+  if(h==='approvals'){renderApprovals();window.scrollTo(0,0);return;}
   const shelf=SHELVES.find(s=>s.code===h);
   if(shelf)renderShelf(shelf); else renderDash();
   window.scrollTo(0,0);
@@ -177,6 +189,7 @@ function renderShelf(s){
         <button class="bout" onclick="mvModal(${iid},'${s.code}','out')">− 出庫</button>
         <button class="bin" onclick="mvModal(${iid},'${s.code}','in')">＋ 入庫</button>
         <button class="bset" onclick="minModal(${iid})">⚙</button>
+        <button class="bset" onclick="fixModal(${iid},'${s.code}')">✏️</button>
       </div></div>`;
   }).join('');
   $('app').innerHTML=`
@@ -275,6 +288,101 @@ window.doNewItem=async function(shelf){
     const r=await api('qr_items?select=id',{method:'POST',headers:Object.assign({},H,{'Prefer':'return=representation'}),
       body:JSON.stringify({name,model:($('nModel').value||'').trim(),unit:$('nUnit').value,source:'app',item_code:'U-'+Date.now().toString(36)})});
     await loadAll(); initQty(r[0].id,shelf);
+  }catch(e){toast('エラー');console.error(e);}
+};
+
+/* ---------- 修正・削除（承認制） ---------- */
+window.fixModal=function(iid,shelf){
+  const it=itemById(iid); const cur=stocksFor(shelf)[iid]||0;
+  const who=localStorage.getItem('qr_who')||'';
+  openMd(`<h3>✏️ 修正・削除 — ${esc(it?.name)}</h3>
+    <div style="font-size:.8rem;color:var(--gray)">現在庫 ${cur}${esc(it?.unit||'')} ・ ${esc(shelf)}<br>
+    ※ 最終承認（李相勲）後に反映されます。承認コードを入力すると即時実行。</div>
+    <label>操作を選択</label>
+    <select id="fType"><option value="qty">数量を修正する</option><option value="delete">この棚から削除する（全量取消）</option></select>
+    <label>新しい数量（修正の場合のみ）</label>
+    <input id="fQty" type="number" inputmode="decimal" min="0" step="any" value="${cur}">
+    <label>理由</label><input id="fReason" placeholder="例: 入力ミス / テストデータ削除">
+    <label>申請者</label><input id="fWho" value="${esc(who)}" placeholder="例: 李">
+    <label>承認コード（李相勲のみ・空欄なら承認待ちに登録）</label>
+    <input id="fPin" type="password" inputmode="numeric" placeholder="即時実行する場合のみ入力">
+    <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
+    <button class="mok" onclick="submitFix(${iid},'${shelf}')">送信</button></div>`);
+};
+window.submitFix=async function(iid,shelf){
+  const rtype=$('fType').value;
+  const newQty=rtype==='qty'?Number($('fQty').value):null;
+  if(rtype==='qty'&&(isNaN(newQty)||newQty<0)){toast('新しい数量を入力してください');return;}
+  const reason=($('fReason').value||'').trim();
+  const who=($('fWho').value||'').trim(); if(who)localStorage.setItem('qr_who',who);
+  const pin=($('fPin').value||'').trim();
+  try{
+    const r=await api('qr_change_requests?select=id',{method:'POST',headers:Object.assign({},H,{'Prefer':'return=representation'}),
+      body:JSON.stringify({rtype,shelf_code:shelf,item_id:iid,new_qty:newQty,reason,requested_by:who})});
+    const reqId=r[0].id;
+    if(pin){
+      if(await sha256(pin)!==PINHASH){await loadAll();closeMd();render();toast('承認コードが違います → 承認待ちに登録しました');return;}
+      await applyReq(REQS_fresh(reqId,{id:reqId,rtype,shelf_code:shelf,item_id:iid,new_qty:newQty}));
+      await loadAll();closeMd();render();toast('承認・反映しました（李相勲）');
+    }else{
+      await loadAll();closeMd();render();toast('申請しました（承認待ち）');
+    }
+  }catch(e){toast('エラー');console.error(e);}
+};
+function REQS_fresh(id,fallback){return REQS.find(x=>x.id===id)||fallback;}
+async function applyReq(req){
+  const cur=stocksFor(req.shelf_code)[req.item_id]||0;
+  const delta=req.rtype==='delete'?-cur:(Number(req.new_qty)-cur);
+  if(delta!==0){
+    await api('qr_transactions',{method:'POST',body:JSON.stringify({
+      shelf_code:req.shelf_code,item_id:req.item_id,qty:delta,kind:'adjust',
+      memo:(req.rtype==='delete'?'削除':'数量修正')+'承認 申請#'+req.id,created_by:'李相勲(承認)'})});
+  }
+  await api('qr_change_requests?id=eq.'+req.id,{method:'PATCH',body:JSON.stringify({
+    status:'approved',decided_by:'李相勲',decided_at:new Date().toISOString()})});
+}
+function renderApprovals(){
+  $('hTitle').textContent='✅ 承認待ち一覧';
+  const pend=pendingReqs();
+  const rows=pend.map(r=>{
+    const it=itemById(r.item_id); const cur=stocksFor(r.shelf_code)[r.item_id]||0;
+    const what=r.rtype==='delete'?`<b style="color:var(--red)">この棚から削除</b>（現在庫 ${cur} → 0）`:`数量修正 ${cur} → <b>${Number(r.new_qty)}</b>`;
+    return `<div class="card warn">
+      <div class="iname">${esc(it?.name||'')}</div>
+      <div class="imeta">${esc(r.shelf_code)} ・ 申請#${r.id} ・ ${fmtD(r.created_at)} ${r.requested_by?'・ '+esc(r.requested_by):''}</div>
+      <div style="font-size:.88rem;margin:6px 0">${what}</div>
+      ${r.reason?`<div class="subline">理由: ${esc(r.reason)}</div>`:''}
+      <div class="btnrow">
+        <button class="bin" onclick="decideReq(${r.id},'approve')">✅ 承認する</button>
+        <button class="bset" style="flex:1" onclick="decideReq(${r.id},'reject')">✖ 却下</button>
+      </div></div>`;
+  }).join('')||'<div class="empty">承認待ちの申請はありません</div>';
+  const done=REQS.filter(r=>r.status!=='pending').slice(0,10).map(r=>{
+    const it=itemById(r.item_id);
+    return `<div class="hist">${fmtD(r.created_at)} ${r.rtype==='delete'?'削除':'数量修正'} ${esc(it?.name||'')} ｜ ${esc(r.shelf_code)} → <b class="${r.status==='approved'?'in':'out'}">${r.status==='approved'?'承認済':'却下'}</b></div>`;
+  }).join('')||'<div class="empty">履歴なし</div>';
+  $('app').innerHTML=`
+    <div class="chips"><span class="chip ${pend.length?'cr':'cn'}">承認待ち ${pend.length}件</span><span class="chip cn">最終承認者: 李相勲</span></div>
+    ${rows}
+    <h2>処理済み（直近10件）</h2><div class="card">${done}</div>`;
+}
+window.decideReq=async function(id,action){
+  const req=REQS.find(r=>r.id===id); if(!req)return;
+  openMd(`<h3>${action==='approve'?'✅ 承認':'✖ 却下'}の確認</h3>
+    <label>承認コード（李相勲）</label>
+    <input id="aPin" type="password" inputmode="numeric">
+    <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
+    <button class="mok ${action==='approve'?'in':''}" onclick="doDecide(${id},'${action}')">${action==='approve'?'承認して反映':'却下する'}</button></div>`);
+  setTimeout(()=>$('aPin').focus(),100);
+};
+window.doDecide=async function(id,action){
+  const pin=($('aPin').value||'').trim();
+  if(await sha256(pin)!==PINHASH){toast('承認コードが違います');return;}
+  const req=REQS.find(r=>r.id===id);
+  try{
+    if(action==='approve'){await applyReq(req);}
+    else{await api('qr_change_requests?id=eq.'+id,{method:'PATCH',body:JSON.stringify({status:'rejected',decided_by:'李相勲',decided_at:new Date().toISOString()})});}
+    await loadAll();closeMd();render();toast(action==='approve'?'承認・反映しました':'却下しました');
   }catch(e){toast('エラー');console.error(e);}
 };
 
