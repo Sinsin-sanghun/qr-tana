@@ -112,6 +112,7 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 <input type="file" id="phFile" accept="image/*" style="display:none">
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script>
 const URL0='https://ndbqaphghlfcsfkfwbnn.supabase.co/rest/v1/';
 const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kYnFhcGhnaGxmY3Nma2Z3Ym5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NTExNTIsImV4cCI6MjA5NDMyNzE1Mn0.F_iAEpv8yz7Cyy6ra6svJa8GdZnoyguayxAsFSuEcrY';
@@ -176,9 +177,54 @@ function render(){
   $('hAppr').textContent=n?`✅ 承認(${n})`:'✅ 承認';
   const h=decodeURIComponent(location.hash.replace('#',''));
   if(h==='approvals'){renderApprovals();window.scrollTo(0,0);return;}
+  if(h.startsWith('I-')){
+    const code=h.slice(2);
+    const it=ITEMS.find(x=>(x.item_code||'')===code);
+    if(it){renderItem(it);window.scrollTo(0,0);return;}
+  }
   const shelf=SHELVES.find(s=>s.code===h);
   if(shelf)renderShelf(shelf); else renderDash();
   window.scrollTo(0,0);
+}
+function renderItem(it){
+  $('hTitle').textContent='📦 '+(it.item_code||'資材');
+  const phs=photosFor(it.id);
+  const phHtml=phs.length?`<div style="display:flex;gap:8px;overflow-x:auto;margin:10px 0 4px">${phs.map(p=>`<img src="${esc(p.url)}" loading="lazy" style="width:86px;height:86px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex-shrink:0" onclick="showPhs(${it.id})">`).join('')}</div>`:'';
+  let total=0;
+  const rows=SHELVES.map(s=>{
+    const q=stocksFor(s.code)[it.id]||0; if(!q)return '';
+    total+=q;
+    const o=out30(s.code,it.id); const j=judge(q,o,it.min_qty);
+    return `<div class="card ${j.k==='br'?'warn':''}"><div class="itemrow">
+      <div style="flex:1"><div class="iname">📍 ${esc(s.code)}</div><div class="imeta">${esc(s.label)}</div></div>
+      <div><div class="iqty">${q}</div><div class="iunit">${esc(it.unit||'')}</div></div>
+      <span class="badge ${j.k}">${j.t}</span></div>
+      <div class="btnrow">
+        <button class="bout" onclick="mvModal(${it.id},'${s.code}','out')">− 出庫</button>
+        <button class="bin" onclick="mvModal(${it.id},'${s.code}','in')">＋ 入庫</button>
+      </div></div>`;
+  }).join('');
+  const hist=TX.filter(t=>t.item_id===it.id).slice(0,15).map(t=>{
+    const cls=t.kind==='out'?'out':t.kind==='in'?'in':'adj';const sign=Number(t.qty)>0?'+':'';
+    return `<div class="hist">${fmtD(t.created_at)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ｜ ${esc(t.shelf_code)} ${t.site?'→ '+esc(t.site):''} ${t.created_by?'('+esc(t.created_by)+')':''}</div>`;
+  }).join('')||'<div class="empty">記録なし</div>';
+  $('app').innerHTML=`
+    <div class="card">
+      <div class="itemrow">
+        <div style="flex:1"><div class="iname" style="font-size:1.02rem">${esc(it.name)}</div>
+        <div class="imeta">${esc(it.model||'')} [${esc(it.item_code||'')}] ・ 単位 ${esc(it.unit||'')}</div></div>
+        <div><div class="iqty">${total}</div><div class="iunit">全棚合計</div></div>
+      </div>
+      ${phHtml}
+      <div class="btnrow">
+        <button class="bset" style="flex:1" onclick="minModal(${it.id})">⚙ 設定</button>
+        <button class="bset" style="flex:1" onclick="showItemQR(${it.id})">📇 QR</button>
+        <button class="bset" style="flex:1" onclick="phStart(${it.id})">📷 写真</button>
+      </div>
+    </div>
+    <h2>保管場所ごとの在庫</h2>
+    ${rows||'<div class="empty">この資材はまだどの棚にも登録されていません。<br>棚ページの「＋この棚に資材を登録」から登録してください。</div>'}
+    <h2>この資材の記録</h2><div class="card">${hist}</div>`;
 }
 function renderDash(){
   $('hTitle').textContent='📦 QR棚管理 — 全体';
@@ -277,17 +323,39 @@ window.doMove=async function(iid,shelf,kind){
 };
 window.minModal=function(iid){
   const it=itemById(iid);
-  openMd(`<h3>⚙ 最低在庫の設定 — ${esc(it?.name)}</h3>
-    <label>この数以下になったら「不足」表示（現在: ${Number(it?.min_qty||0)}）</label>
-    <input id="mMin" type="number" inputmode="decimal" min="0" step="any" value="${Number(it?.min_qty||0)}">
-    <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
-    <button class="mok" onclick="doMin(${iid})">保存</button></div>`);
+  const units=['個','セット','m','本','袋','箱','巻','枚','式'];
+  if(it?.unit&&!units.includes(it.unit))units.unshift(it.unit);
+  openMd(`<h3>⚙ 資材の設定</h3>
+    <label>品名</label><input id="sName" value="${esc(it?.name||'')}">
+    <label>型番</label><input id="sModel" value="${esc(it?.model||'')}">
+    <label>単位</label><select id="sUnit">${units.map(u=>`<option ${it?.unit===u?'selected':''}>${u}</option>`).join('')}</select>
+    <label>最低在庫（この数以下で「不足」表示）</label>
+    <input id="sMin" type="number" inputmode="decimal" min="0" step="any" value="${Number(it?.min_qty||0)}">
+    <div class="mact"><button class="mcancel" onclick="showItemQR(${iid})">📇 QRコード</button>
+    <button class="mok" onclick="doItemSave(${iid})">保存</button></div>
+    <div style="text-align:center;margin-top:12px"><button class="mcancel" style="padding:9px 26px" onclick="closeMd()">閉じる</button></div>`);
 };
-window.doMin=async function(iid){
-  const v=Number($('mMin').value||0);
-  try{await api('qr_items?id=eq.'+iid,{method:'PATCH',body:JSON.stringify({min_qty:v})});
-    await loadAll();closeMd();render();toast('最低在庫を保存しました');}
+window.doItemSave=async function(iid){
+  const name=($('sName').value||'').trim(); if(!name){toast('品名を入力してください');return;}
+  try{await api('qr_items?id=eq.'+iid,{method:'PATCH',body:JSON.stringify({
+      name,model:($('sModel').value||'').trim(),unit:$('sUnit').value,min_qty:Number($('sMin').value||0)})});
+    await loadAll();closeMd();render();toast('保存しました');}
   catch(e){toast('エラー');console.error(e);}
+};
+window.showItemQR=function(iid){
+  const it=itemById(iid); if(!it)return;
+  const code=it.item_code||('id'+iid);
+  const url=location.origin+location.pathname+'#I-'+encodeURIComponent(code);
+  const q=qrcode(0,'M'); q.addData(url); q.make();
+  const img=q.createDataURL(10,4);
+  openMd(`<h3>📇 資材QRコード</h3>
+    <div style="text-align:center">
+      <img src="${img}" style="width:230px;height:230px;image-rendering:pixelated;border:1px solid var(--line);border-radius:8px;background:#fff">
+      <div style="font-weight:800;color:var(--navy);font-size:1.1rem;margin-top:8px">${esc(code)}</div>
+      <div style="font-size:.9rem">${esc(it.name)}</div>
+      <div style="font-size:.75rem;color:var(--gray);margin-top:10px">スキャンするとこの資材の専用ページが開きます<br>（全保管場所の在庫・入出庫）。<br>スクリーンショット→印刷して資材や箱に貼ってください。</div>
+    </div>
+    <div class="mact"><button class="mcancel" onclick="closeMd()">閉じる</button></div>`);
 };
 window.addModal=function(shelf){
   openMd(`<h3>＋ ${esc(shelf)} に資材を登録</h3>
