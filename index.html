@@ -108,7 +108,7 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center">
     <div><div class="t" id="hTitle">📦 QR棚管理</div><div class="s" id="hSub">しろくま電力 購買部 ・ 野田倉庫</div></div>
-    <div style="text-align:right"><a href="#approvals" id="hAppr">✅ 承認</a>　<a href="#" id="hHome">🏠 全体</a></div>
+    <div style="text-align:right"><a href="#ships">🚚 出荷</a>　<a href="#approvals" id="hAppr">✅ 承認</a>　<a href="#" id="hHome">🏠 全体</a></div>
   </div>
 </header>
 <div class="wrap" id="app"><div class="loading">読み込み中…</div></div>
@@ -153,7 +153,7 @@ async function loadAll(){
     api('qr_change_requests?select=*&order=created_at.desc&limit=200'),
     api('qr_item_photos?select=*&order=sort,id&limit=10000'),
     ISADMIN?api('qr_access_requests?select=*&order=created_at.desc&limit=100'):Promise.resolve([]),
-    api('qr_shipments?select=*&order=ship_date.desc,id.desc&limit=100'),
+    api('qr_shipments?select=*&order=ship_date.desc,id.desc&limit=500'),
     api('qr_settings?key=eq.approval_pin_hash&select=value')
   ]);
   PINHASH=ST?.[0]?.value||'';
@@ -198,6 +198,7 @@ function render(){
   const h=decodeURIComponent(location.hash.replace('#',''));
   if(h==='approvals'){renderApprovals();window.scrollTo(0,0);return;}
   if(h==='newship'){renderNewShip();window.scrollTo(0,0);return;}
+  if(h==='ships'){renderShips();window.scrollTo(0,0);return;}
   if(h.startsWith('S-')){
     const sp=SHIPS.find(x=>x.id===+h.slice(2));
     if(sp){renderShip(sp);window.scrollTo(0,0);return;}
@@ -728,6 +729,32 @@ window.submitShip=async function(){
     await loadAll();location.hash='S-'+sid;render();toast('出荷リストを発行しました');
   }catch(e){toast('エラー: 発行できませんでした');console.error(e);}
 };
+let SHIPQ='';
+function shipRowsHtml(){
+  const q=SHIPQ.toLowerCase();
+  const list=SHIPS.filter(sp=>!q||(sp.site||'').toLowerCase().includes(q)||(sp.ship_date||'').includes(q));
+  return list.map(sp=>{
+    const txs=TX.filter(t=>t.shipment_id===sp.id);
+    const agg={}; txs.forEach(t=>{agg[t.item_id]=(agg[t.item_id]||0)+(-Number(t.qty));});
+    const items=Object.entries(agg);
+    const totalQ=items.reduce((a,[,v])=>a+v,0);
+    const summary=items.slice(0,3).map(([iid,v])=>{const it=itemById(+iid);return esc((it?.name||'').slice(0,14))+'×'+v;}).join('、');
+    return `<div class="card" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">
+      <div class="itemrow"><div style="flex:1">
+        <div class="iname">📄 ${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）　${esc(sp.site)}</div>
+        <div class="imeta">${items.length}品目・計${totalQ}点 ${summary?'｜ '+summary+(items.length>3?' …':''):''}</div>
+        <div class="imeta">担当 ${esc(sp.created_by||'—')} ・ リストNo. S-${sp.id}</div>
+      </div><span class="badge bn">開く ›</span></div></div>`;
+  }).join('')||'<div class="empty">該当する出荷履歴がありません</div>';
+}
+function renderShips(){
+  $('hTitle').textContent='🚚 出荷履歴';
+  $('app').innerHTML=`
+    <div class="chips"><span class="chip cn">出荷 ${SHIPS.length}件</span><span class="chip cn">タップで出荷リスト（印刷可）を再表示</span></div>
+    <input placeholder="🔍 案件名・日付で検索…" value="${esc(SHIPQ)}" oninput="SHIPQ=this.value;$('shipList').innerHTML=shipRowsHtml()" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;margin-bottom:10px">
+    <button class="shipbtn" onclick="NEWSHIP=null;location.hash='newship'">＋ 新しい出荷リストを作成</button>
+    <div id="shipList">${shipRowsHtml()}</div>`;
+}
 function renderShip(sp){
   $('hTitle').textContent='📄 出荷リスト';
   const txs=TX.filter(t=>t.shipment_id===sp.id);
