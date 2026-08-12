@@ -65,6 +65,14 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 .toast.on{opacity:1}
 .empty{text-align:center;color:var(--gray);font-size:.85rem;padding:26px 0}
 .loading{text-align:center;color:var(--gray);padding:40px 0}
+.thumb{width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--line);flex-shrink:0}
+.thumb-e{width:56px;height:56px;border-radius:8px;border:1.5px dashed #b9cbdc;color:#b9cbdc;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0}
+.lb{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;z-index:120}
+.lb.on{display:flex}
+.lb img{max-width:94vw;max-height:88vh;border-radius:8px}
+.pk{display:flex;gap:9px;align-items:center}
+.pkt{width:42px;height:42px;border-radius:6px;object-fit:cover;flex-shrink:0;border:1px solid var(--line)}
+.pkt-e{width:42px;height:42px;border-radius:6px;border:1px dashed #d3dee9;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -77,6 +85,8 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 <div class="wrap" id="app"><div class="loading">読み込み中…</div></div>
 <div class="ov" id="ov"><div class="md" id="md"></div></div>
 <div class="toast" id="toast"></div>
+<div class="lb" id="lb" onclick="this.classList.remove('on')"><img id="lbImg" alt=""></div>
+<input type="file" id="phFile" accept="image/*" style="display:none">
 
 <script>
 const URL0='https://ndbqaphghlfcsfkfwbnn.supabase.co/rest/v1/';
@@ -178,8 +188,10 @@ function renderShelf(s){
   const rows=Object.entries(st).filter(([,q])=>q!==0).map(([iid,q])=>{
     const it=itemById(+iid); const o=out30(s.code,+iid); const j=judge(q,o,it?.min_qty);
     const leftTxt=j.left?` ・ 在庫切れまで約${Math.round(j.left)}日`:'';
+    const th=it?.photo_url?`<img class="thumb" src="${esc(it.photo_url)}" loading="lazy" onclick="showPh('${esc(it.photo_url)}')">`:`<div class="thumb-e" onclick="phStart(${iid})">📷</div>`;
     return `<div class="card ${j.k==='br'?'warn':''}">
       <div class="itemrow">
+        ${th}
         <div style="flex:1"><div class="iname">${esc(it?.name)}</div><div class="imeta">${esc(it?.model||'')} ${it?.item_code?'['+esc(it.item_code)+']':''}</div></div>
         <div><div class="iqty" style="color:${j.k==='br'?'var(--red)':j.k==='ba'?'var(--amber)':'var(--navy)'}">${q}</div><div class="iunit">${esc(it?.unit||'')}</div></div>
         <span class="badge ${j.k}">${j.t}</span>
@@ -190,6 +202,7 @@ function renderShelf(s){
         <button class="bin" onclick="mvModal(${iid},'${s.code}','in')">＋ 入庫</button>
         <button class="bset" onclick="minModal(${iid})">⚙</button>
         <button class="bset" onclick="fixModal(${iid},'${s.code}')">✏️</button>
+        <button class="bset" onclick="phStart(${iid})">📷</button>
       </div></div>`;
   }).join('');
   $('app').innerHTML=`
@@ -257,7 +270,7 @@ window.addModal=function(shelf){
 window.pickList=function(shelf){
   const q=($('mSearch').value||'').toLowerCase();
   const hits=ITEMS.filter(i=>!q||(i.name+' '+(i.model||'')+' '+(i.item_code||'')).toLowerCase().includes(q)).slice(0,40);
-  $('mPick').innerHTML=hits.map(i=>`<div class="pk" onclick="initQty(${i.id},'${shelf}')"><b>${esc(i.name)}</b><div class="m">${esc(i.item_code||'')} ${esc(i.model||'')} ・ ${esc(i.package||'')}</div></div>`).join('')||'<div class="pk">該当なし → 下の「新規資材を作成」へ</div>';
+  $('mPick').innerHTML=hits.map(i=>`<div class="pk" onclick="initQty(${i.id},'${shelf}')">${i.photo_url?`<img class="pkt" src="${esc(i.photo_url)}" loading="lazy">`:'<div class="pkt-e"></div>'}<div style="flex:1"><b>${esc(i.name)}</b><div class="m">${esc(i.item_code||'')} ${esc(i.model||'')} ・ ${esc(i.package||'')}</div></div></div>`).join('')||'<div class="pk">該当なし → 下の「新規資材を作成」へ</div>';
 };
 window.initQty=function(iid,shelf){
   const it=itemById(iid);
@@ -385,6 +398,41 @@ window.doDecide=async function(id,action){
     await loadAll();closeMd();render();toast(action==='approve'?'承認・反映しました':'却下しました');
   }catch(e){toast('エラー');console.error(e);}
 };
+
+/* ---------- 写真 ---------- */
+let PH_TARGET=null;
+window.showPh=function(u){$('lbImg').src=u;$('lb').classList.add('on');};
+window.phStart=function(iid){PH_TARGET=iid;$('phFile').value='';$('phFile').click();};
+function shrink(file,max,q){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      if(w>h){if(w>max){h*=max/w;w=max;}}else{if(h>max){w*=max/h;h=max;}}
+      const c=document.createElement('canvas');c.width=Math.round(w);c.height=Math.round(h);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      c.toBlob(b=>b?res(b):rej(new Error('blob')),'image/jpeg',q);
+    };
+    img.onerror=rej;
+    img.src=URL.createObjectURL(file);
+  });
+}
+$('phFile').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f||PH_TARGET==null)return;
+  toast('写真をアップロード中…');
+  try{
+    const blob=await shrink(f,800,.72);
+    const it=itemById(PH_TARGET);
+    const name=((it?.item_code||('id'+PH_TARGET)).replace(/[^A-Za-z0-9_-]/g,''))+'_'+Date.now()+'.jpg';
+    const r=await fetch('https://ndbqaphghlfcsfkfwbnn.supabase.co/storage/v1/object/qr-photos/'+name,
+      {method:'POST',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'image/jpeg','x-upsert':'true'},body:blob});
+    if(!r.ok)throw new Error(await r.text());
+    const url='https://ndbqaphghlfcsfkfwbnn.supabase.co/storage/v1/object/public/qr-photos/'+name;
+    await api('qr_items?id=eq.'+PH_TARGET,{method:'PATCH',body:JSON.stringify({photo_url:url})});
+    await loadAll();render();toast('写真を登録しました');
+  }catch(err){toast('写真の登録に失敗しました');console.error(err);}
+  finally{PH_TARGET=null;}
+});
 
 /* ---------- boot ---------- */
 window.addEventListener('hashchange',render);
