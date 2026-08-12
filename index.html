@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>しろくま電力 QR棚管理</title>
+<style>
+:root{--navy:#16324f;--blue:#2b6cb0;--sky:#eaf3fb;--line:#d9e4ef;--green:#2f855a;--greenbg:#e4f5ec;
+--amber:#b7791f;--amberbg:#fdf3dd;--red:#c53030;--redbg:#fdeaea;--gray:#64748b;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:"Yu Gothic UI","Hiragino Sans","Meiryo",sans-serif;background:#eef3f8;color:#243447;line-height:1.55;padding-bottom:40px}
+header{background:linear-gradient(120deg,#16324f,#2b5c8f);color:#fff;padding:14px 16px;position:sticky;top:0;z-index:10}
+header .t{font-size:1.15rem;font-weight:800}
+header .s{font-size:.75rem;opacity:.8}
+header a{color:#cfe3f5;font-size:.78rem;text-decoration:none}
+.wrap{max-width:640px;margin:0 auto;padding:12px}
+.chips{display:flex;gap:8px;margin:4px 0 12px;flex-wrap:wrap}
+.chip{border-radius:20px;padding:4px 14px;font-size:.8rem;font-weight:700}
+.cg{background:var(--greenbg);color:var(--green)}.ca{background:var(--amberbg);color:var(--amber)}
+.cr{background:var(--redbg);color:var(--red)}.cn{background:#e2e8f0;color:#475569}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.card.warn{background:#fffafa;border-color:#f3c7c7}
+.itemrow{display:flex;align-items:center;gap:10px}
+.iname{font-weight:700;font-size:.92rem}
+.imeta{font-size:.72rem;color:var(--gray)}
+.iqty{font-size:1.5rem;font-weight:800;min-width:64px;text-align:right}
+.iunit{font-size:.7rem;color:var(--gray);text-align:right}
+.badge{border-radius:12px;padding:2px 10px;font-size:.72rem;font-weight:700;white-space:nowrap}
+.bg{background:var(--greenbg);color:var(--green)}.ba{background:var(--amberbg);color:var(--amber)}
+.br{background:var(--redbg);color:var(--red)}.bn{background:#e2e8f0;color:#475569}
+.subline{font-size:.72rem;color:var(--gray);margin-top:4px}
+.btnrow{display:flex;gap:8px;margin-top:8px}
+button{border:none;border-radius:9px;font-weight:700;cursor:pointer;font-family:inherit}
+.bout{background:var(--blue);color:#fff;padding:9px 0;flex:1;font-size:.95rem}
+.bin{background:var(--green);color:#fff;padding:9px 0;flex:1;font-size:.95rem}
+.bset{background:#e2e8f0;color:#475569;padding:9px 12px;font-size:.8rem}
+.baddbig{width:100%;background:#fff;border:2px dashed var(--blue);color:var(--blue);padding:12px;font-size:.95rem;border-radius:12px;margin:4px 0 14px}
+.shelfgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.shelfcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;text-decoration:none;color:inherit;display:block}
+.shelfcard .c{font-size:1.15rem;font-weight:800;color:var(--navy)}
+.shelfcard .l{font-size:.7rem;color:var(--gray)}
+.shelfcard .n{font-size:.75rem;margin-top:4px}
+h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
+.hist{font-size:.78rem;color:#475569;padding:5px 0;border-bottom:1px dashed var(--line)}
+.hist b.out{color:var(--blue)} .hist b.in{color:var(--green)} .hist b.adj{color:var(--amber)}
+/* modal */
+.ov{position:fixed;inset:0;background:rgba(22,50,79,.5);display:none;align-items:flex-end;justify-content:center;z-index:50}
+.ov.on{display:flex}
+.md{background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:640px;padding:18px 16px 26px;max-height:86vh;overflow-y:auto}
+.md h3{color:var(--navy);font-size:1.02rem;margin-bottom:12px}
+.md label{display:block;font-size:.78rem;color:var(--gray);margin:10px 0 4px}
+.md input,.md select{width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;font-family:inherit}
+.md input:focus{outline:2px solid var(--blue)}
+.qbtns{display:flex;gap:6px;margin-top:6px}
+.qbtns button{background:var(--sky);color:var(--navy);padding:8px 0;flex:1;font-size:.9rem}
+.mact{display:flex;gap:10px;margin-top:16px}
+.mcancel{background:#e2e8f0;color:#475569;padding:12px 0;flex:1;font-size:.95rem}
+.mok{background:var(--navy);color:#fff;padding:12px 0;flex:2;font-size:.95rem}
+.mok.out{background:var(--blue)} .mok.in{background:var(--green)}
+.pick{max-height:44vh;overflow-y:auto;border:1px solid var(--line);border-radius:9px;margin-top:6px}
+.pk{padding:9px 12px;border-bottom:1px solid #eef3f8;font-size:.85rem;cursor:pointer}
+.pk:active{background:var(--sky)}
+.pk .m{font-size:.7rem;color:var(--gray)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;background:var(--navy);color:#fff;padding:10px 22px;border-radius:24px;font-size:.85rem;z-index:99;opacity:0;transition:.3s;pointer-events:none}
+.toast.on{opacity:1}
+.empty{text-align:center;color:var(--gray);font-size:.85rem;padding:26px 0}
+.loading{text-align:center;color:var(--gray);padding:40px 0}
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div><div class="t" id="hTitle">📦 QR棚管理</div><div class="s" id="hSub">しろくま電力 購買部 ・ 野田倉庫</div></div>
+    <a href="#" id="hHome">🏠 全体</a>
+  </div>
+</header>
+<div class="wrap" id="app"><div class="loading">読み込み中…</div></div>
+<div class="ov" id="ov"><div class="md" id="md"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const URL0='https://ndbqaphghlfcsfkfwbnn.supabase.co/rest/v1/';
+const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kYnFhcGhnaGxmY3Nma2Z3Ym5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NTExNTIsImV4cCI6MjA5NDMyNzE1Mn0.F_iAEpv8yz7Cyy6ra6svJa8GdZnoyguayxAsFSuEcrY';
+const H={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
+let SHELVES=[],ITEMS=[],TX=[];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(path,opt){
+  const r=await fetch(URL0+path,Object.assign({headers:H},opt||{}));
+  if(!r.ok){throw new Error(await r.text());}
+  const t=await r.text(); return t?JSON.parse(t):null;
+}
+async function loadAll(){
+  [SHELVES,ITEMS,TX]=await Promise.all([
+    api('qr_shelves?select=*&order=sort'),
+    api('qr_items?select=*&order=item_code&limit=5000'),
+    api('qr_transactions?select=*&order=created_at.desc&limit=10000')
+  ]);
+}
+function itemById(id){return ITEMS.find(i=>i.id===id);}
+function stocksFor(shelf){
+  const m={};
+  for(const t of TX){ if(shelf&&t.shelf_code!==shelf)continue;
+    m[t.item_id]=(m[t.item_id]||0)+Number(t.qty); }
+  return m;
+}
+function out30(shelf,itemId){
+  const lim=Date.now()-30*864e5; let s=0;
+  for(const t of TX){ if(t.kind!=='out')continue; if(shelf&&t.shelf_code!==shelf)continue;
+    if(t.item_id!==itemId)continue; if(new Date(t.created_at).getTime()<lim)continue; s+=-Number(t.qty);}
+  return s;
+}
+function judge(qty,o30,minq){
+  if(qty<=0)return{k:'bn',t:'在庫0'};
+  const daily=o30/30, left=daily>0?qty/daily:null;
+  if(qty<=Number(minq||0)||(left!==null&&left<=7))return{k:'br',t:'🚨 不足',left};
+  if(left!==null&&left<=30)return{k:'ba',t:'⚠️ 注意',left};
+  return{k:'bg',t:'✅ 十分',left};
+}
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2200);}
+function fmtD(s){const d=new Date(s);return (d.getMonth()+1)+'/'+d.getDate();}
+
+/* ---------- views ---------- */
+function render(){
+  const h=decodeURIComponent(location.hash.replace('#',''));
+  const shelf=SHELVES.find(s=>s.code===h);
+  if(shelf)renderShelf(shelf); else renderDash();
+  window.scrollTo(0,0);
+}
+function renderDash(){
+  $('hTitle').textContent='📦 QR棚管理 — 全体';
+  let nR=0,nA=0,nG=0;
+  const shelfHtml=SHELVES.map(s=>{
+    const st=stocksFor(s.code); let worst='',cnt=0;
+    for(const[iid,q]of Object.entries(st)){ if(q<=0)continue; cnt++;
+      const j=judge(q,out30(s.code,+iid),itemById(+iid)?.min_qty);
+      if(j.k==='br'){worst='br';nR++;} else if(j.k==='ba'){if(worst!=='br')worst='ba';nA++;} else if(j.k==='bg'){nG++;if(!worst)worst='bg';}}
+    const mark=worst==='br'?'🚨':worst==='ba'?'⚠️':cnt?'✅':'—';
+    return `<a class="shelfcard" href="#${s.code}"><div class="c">${esc(s.code)}</div><div class="l">${esc(s.label)}</div><div class="n">${mark} ${cnt}品目</div></a>`;
+  }).join('');
+  const shortRows=[];
+  for(const s of SHELVES){const st=stocksFor(s.code);
+    for(const[iid,q]of Object.entries(st)){ if(q<=0)continue;
+      const it=itemById(+iid); const j=judge(q,out30(s.code,+iid),it?.min_qty);
+      if(j.k==='br'||j.k==='ba')shortRows.push({s:s.code,it,q,j});}}
+  shortRows.sort((a,b)=>a.j.k==='br'?-1:1);
+  const shortHtml=shortRows.length?shortRows.map(r=>
+    `<div class="card ${r.j.k==='br'?'warn':''}"><div class="itemrow">
+      <div style="flex:1"><div class="iname">${esc(r.it?.name)}</div><div class="imeta">${esc(r.s)} ・ ${esc(r.it?.model||'')}</div></div>
+      <div><div class="iqty" style="color:${r.j.k==='br'?'var(--red)':'var(--amber)'}">${r.q}</div><div class="iunit">${esc(r.it?.unit||'')}</div></div>
+      <span class="badge ${r.j.k}">${r.j.t}</span></div></div>`).join(''):'<div class="empty">不足・注意の資材はありません</div>';
+  const recent=TX.slice(0,15).map(t=>{const it=itemById(t.item_id);
+    const cls=t.kind==='out'?'out':t.kind==='in'?'in':'adj';
+    const sign=Number(t.qty)>0?'+':'';
+    return `<div class="hist">${fmtD(t.created_at)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ${esc(it?.name||'')} ｜ ${esc(t.shelf_code)} ${t.site?'→ '+esc(t.site):''}</div>`;}).join('')||'<div class="empty">まだ記録がありません</div>';
+  $('app').innerHTML=`
+    <div class="chips"><span class="chip cr">🚨 不足 ${nR}</span><span class="chip ca">⚠️ 注意 ${nA}</span><span class="chip cg">✅ 十分 ${nG}</span><span class="chip cn">棚 ${SHELVES.length}</span></div>
+    <h2>棚一覧（タップで棚ページへ）</h2><div class="shelfgrid">${shelfHtml}</div>
+    <h2>要対応（不足・注意）</h2>${shortHtml}
+    <h2>最近の記録</h2><div class="card">${recent}</div>`;
+}
+function renderShelf(s){
+  $('hTitle').textContent='📍 '+s.code;
+  const st=stocksFor(s.code);
+  const rows=Object.entries(st).filter(([,q])=>q!==0).map(([iid,q])=>{
+    const it=itemById(+iid); const o=out30(s.code,+iid); const j=judge(q,o,it?.min_qty);
+    const leftTxt=j.left?` ・ 在庫切れまで約${Math.round(j.left)}日`:'';
+    return `<div class="card ${j.k==='br'?'warn':''}">
+      <div class="itemrow">
+        <div style="flex:1"><div class="iname">${esc(it?.name)}</div><div class="imeta">${esc(it?.model||'')} ${it?.item_code?'['+esc(it.item_code)+']':''}</div></div>
+        <div><div class="iqty" style="color:${j.k==='br'?'var(--red)':j.k==='ba'?'var(--amber)':'var(--navy)'}">${q}</div><div class="iunit">${esc(it?.unit||'')}</div></div>
+        <span class="badge ${j.k}">${j.t}</span>
+      </div>
+      <div class="subline">直近30日出庫 ${o}${esc(it?.unit||'')}${leftTxt} ・ 最低基準 ${Number(it?.min_qty||0)}</div>
+      <div class="btnrow">
+        <button class="bout" onclick="mvModal(${iid},'${s.code}','out')">− 出庫</button>
+        <button class="bin" onclick="mvModal(${iid},'${s.code}','in')">＋ 入庫</button>
+        <button class="bset" onclick="minModal(${iid})">⚙</button>
+      </div></div>`;
+  }).join('');
+  $('app').innerHTML=`
+    <div class="chips"><span class="chip cn">${esc(s.label)} ・ Aエリア</span></div>
+    <button class="baddbig" onclick="addModal('${s.code}')">＋ この棚に資材を登録（棚卸・新規）</button>
+    ${rows||'<div class="empty">この棚にはまだ資材が登録されていません。<br>上のボタンから登録してください。</div>'}
+    <h2>この棚の記録</h2><div class="card">${
+      TX.filter(t=>t.shelf_code===s.code).slice(0,20).map(t=>{const it=itemById(t.item_id);
+      const cls=t.kind==='out'?'out':t.kind==='in'?'in':'adj';const sign=Number(t.qty)>0?'+':'';
+      return `<div class="hist">${fmtD(t.created_at)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ${esc(it?.name||'')} ${t.site?'→ '+esc(t.site):''} ${t.created_by?'('+esc(t.created_by)+')':''}</div>`;}).join('')||'<div class="empty">記録なし</div>'}</div>`;
+}
+
+/* ---------- modals ---------- */
+function openMd(html){$('md').innerHTML=html;$('ov').classList.add('on');}
+function closeMd(){$('ov').classList.remove('on');}
+$('ov').addEventListener('click',e=>{if(e.target.id==='ov')closeMd();});
+
+window.mvModal=function(iid,shelf,kind){
+  const it=itemById(iid); const who=localStorage.getItem('qr_who')||'';
+  openMd(`<h3>${kind==='out'?'− 出庫':'＋ 入庫'} — ${esc(it?.name)}</h3>
+    <label>数量（${esc(it?.unit||'')}）</label><input id="mQty" type="number" inputmode="decimal" min="0.1" step="any">
+    <div class="qbtns">${[1,2,5,10].map(n=>`<button onclick="$('mQty').value=${n}">${n}</button>`).join('')}</div>
+    ${kind==='out'?'<label>行き先（現場名・任意）</label><input id="mSite" placeholder="例: 石山現場">':''}
+    <label>担当（任意・次回も記憶）</label><input id="mWho" value="${esc(who)}" placeholder="例: 李">
+    <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
+    <button class="mok ${kind}" onclick="doMove(${iid},'${shelf}','${kind}')">${kind==='out'?'出庫を記録':'入庫を記録'}</button></div>`);
+  setTimeout(()=>$('mQty').focus(),100);
+};
+window.doMove=async function(iid,shelf,kind){
+  const q=Number($('mQty').value); if(!q||q<=0){toast('数量を入力してください');return;}
+  const who=($('mWho')?.value||'').trim(); localStorage.setItem('qr_who',who);
+  const site=($('mSite')?.value||'').trim();
+  if(kind==='out'){ // 재고 초과 출고 방지
+    const cur=stocksFor(shelf)[iid]||0;
+    if(q>cur&&!confirm(`現在庫 ${cur} より多い出庫です。よろしいですか？`))return;
+  }
+  try{
+    await api('qr_transactions',{method:'POST',body:JSON.stringify({shelf_code:shelf,item_id:iid,qty:kind==='out'?-q:q,kind,site,created_by:who})});
+    await loadAll();closeMd();render();toast(kind==='out'?'出庫を記録しました':'入庫を記録しました');
+  }catch(e){toast('エラー: 記録できませんでした');console.error(e);}
+};
+window.minModal=function(iid){
+  const it=itemById(iid);
+  openMd(`<h3>⚙ 最低在庫の設定 — ${esc(it?.name)}</h3>
+    <label>この数以下になったら「不足」表示（現在: ${Number(it?.min_qty||0)}）</label>
+    <input id="mMin" type="number" inputmode="decimal" min="0" step="any" value="${Number(it?.min_qty||0)}">
+    <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
+    <button class="mok" onclick="doMin(${iid})">保存</button></div>`);
+};
+window.doMin=async function(iid){
+  const v=Number($('mMin').value||0);
+  try{await api('qr_items?id=eq.'+iid,{method:'PATCH',body:JSON.stringify({min_qty:v})});
+    await loadAll();closeMd();render();toast('最低在庫を保存しました');}
+  catch(e){toast('エラー');console.error(e);}
+};
+window.addModal=function(shelf){
+  openMd(`<h3>＋ ${esc(shelf)} に資材を登録</h3>
+    <label>資材を検索（品名・型番・コード）</label>
+    <input id="mSearch" placeholder="例: ボルト / GBP / P1-01" oninput="pickList('${shelf}')">
+    <div class="pick" id="mPick"></div>
+    <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
+    <button class="mok" onclick="newItemModal('${shelf}')">＋ 新規資材を作成</button></div>`);
+  pickList(shelf); setTimeout(()=>$('mSearch').focus(),100);
+};
+window.pickList=function(shelf){
+  const q=($('mSearch').value||'').toLowerCase();
+  const hits=ITEMS.filter(i=>!q||(i.name+' '+(i.model||'')+' '+(i.item_code||'')).toLowerCase().includes(q)).slice(0,40);
+  $('mPick').innerHTML=hits.map(i=>`<div class="pk" onclick="initQty(${i.id},'${shelf}')"><b>${esc(i.name)}</b><div class="m">${esc(i.item_code||'')} ${esc(i.model||'')} ・ ${esc(i.package||'')}</div></div>`).join('')||'<div class="pk">該当なし → 下の「新規資材を作成」へ</div>';
+};
+window.initQty=function(iid,shelf){
+  const it=itemById(iid);
+  openMd(`<h3>初期数量 — ${esc(it?.name)}</h3>
+    <label>${esc(shelf)} に現在ある数量（${esc(it?.unit||'')}）</label>
+    <input id="mQty" type="number" inputmode="decimal" min="0" step="any">
+    <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
+    <button class="mok in" onclick="doInit(${iid},'${shelf}')">登録</button></div>`);
+  setTimeout(()=>$('mQty').focus(),100);
+};
+window.doInit=async function(iid,shelf){
+  const q=Number($('mQty').value); if(!q||q<0){toast('数量を入力してください');return;}
+  try{await api('qr_transactions',{method:'POST',body:JSON.stringify({shelf_code:shelf,item_id:iid,qty:q,kind:'init',created_by:localStorage.getItem('qr_who')||''})});
+    await loadAll();closeMd();render();toast('登録しました');}
+  catch(e){toast('エラー');console.error(e);}
+};
+window.newItemModal=function(shelf){
+  openMd(`<h3>＋ 新規資材を作成</h3>
+    <label>品名（必須）</label><input id="nName">
+    <label>型番</label><input id="nModel">
+    <label>単位</label><select id="nUnit"><option>個</option><option>セット</option><option>m</option><option>本</option><option>袋</option><option>箱</option><option>巻</option><option>枚</option><option>式</option></select>
+    <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
+    <button class="mok" onclick="doNewItem('${shelf}')">作成して数量入力へ</button></div>`);
+};
+window.doNewItem=async function(shelf){
+  const name=($('nName').value||'').trim(); if(!name){toast('品名を入力してください');return;}
+  try{
+    const r=await api('qr_items?select=id',{method:'POST',headers:Object.assign({},H,{'Prefer':'return=representation'}),
+      body:JSON.stringify({name,model:($('nModel').value||'').trim(),unit:$('nUnit').value,source:'app',item_code:'U-'+Date.now().toString(36)})});
+    await loadAll(); initQty(r[0].id,shelf);
+  }catch(e){toast('エラー');console.error(e);}
+};
+
+/* ---------- boot ---------- */
+window.addEventListener('hashchange',render);
+(async()=>{try{await loadAll();render();}catch(e){$('app').innerHTML='<div class="empty">読み込みエラー。通信環境をご確認ください。</div>';console.error(e);}})();
+</script>
+</body>
+</html>
