@@ -222,7 +222,6 @@ function renderItem(it){
       <div><div class="iqty">${q}</div><div class="iunit">${esc(it.unit||'')}</div></div>
       <span class="badge ${j.k}">${j.t}</span></div>
       <div class="btnrow">
-        <button class="bout" onclick="mvModal(${it.id},'${s.code}','out')">− 出庫</button>
         <button class="bin" onclick="mvModal(${it.id},'${s.code}','in')">＋ 入庫</button>
       </div></div>`;
   }).join('');
@@ -299,7 +298,6 @@ function renderShelf(s){
       </div>
       <div class="subline">直近30日出庫 ${o}${esc(it?.unit||'')}${leftTxt} ・ 最低基準 ${Number(it?.min_qty||0)}</div>
       <div class="btnrow">
-        <button class="bout" onclick="mvModal(${iid},'${s.code}','out')">− 出庫</button>
         <button class="bin" onclick="mvModal(${iid},'${s.code}','in')">＋ 入庫</button>
         <button class="bset" onclick="minModal(${iid})">⚙</button>
         <button class="bset" onclick="fixModal(${iid},'${s.code}')">✏️</button>
@@ -309,6 +307,7 @@ function renderShelf(s){
   $('app').innerHTML=`
     <div class="chips"><span class="chip cn">${esc(s.label)} ・ Aエリア</span></div>
     <button class="baddbig" onclick="addModal('${s.code}')">＋ この棚に資材を登録（棚卸・新規）</button>
+    <div class="cap" style="margin:-6px 0 10px">💡 出庫は 🏠全体 → 「🚚 出荷リストを作成」から（案件ごとに記録・リスト印刷）</div>
     ${rows||'<div class="empty">この棚にはまだ資材が登録されていません。<br>上のボタンから登録してください。</div>'}
     <h2>この棚の記録</h2><div class="card">${
       TX.filter(t=>t.shelf_code===s.code).slice(0,20).map(t=>{const it=itemById(t.item_id);
