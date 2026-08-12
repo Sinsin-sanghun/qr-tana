@@ -65,6 +65,22 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 .toast.on{opacity:1}
 .empty{text-align:center;color:var(--gray);font-size:.85rem;padding:26px 0}
 .loading{text-align:center;color:var(--gray);padding:40px 0}
+.shipbtn{width:100%;background:var(--navy);color:#fff;padding:13px;font-size:.95rem;border-radius:12px;margin:4px 0 10px}
+.sdoc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:26px 24px;margin-bottom:14px}
+.sdoc h1{font-size:1.25rem;color:#111;border-bottom:3px solid #16324f;padding-bottom:8px;margin-bottom:4px}
+.sdoc .smeta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:.95rem;margin:10px 0 14px}
+.sdoc table{width:100%;border-collapse:collapse;font-size:.9rem}
+.sdoc th{background:#eef3f8;border:1.5px solid #94a3b8;padding:7px 8px;color:#111}
+.sdoc td{border:1.5px solid #94a3b8;padding:7px 8px;vertical-align:middle}
+.sdoc .qtd{text-align:center;width:76px}
+.sdoc .ntd{text-align:center;font-size:1.05rem;font-weight:800;width:90px}
+.sdoc .foot{font-size:.75rem;color:#475569;margin-top:12px}
+@media print{
+  header,.noprint{display:none!important}
+  body{background:#fff;padding:0}
+  .wrap{max-width:none;padding:0}
+  .sdoc{border:none;border-radius:0;padding:6mm 4mm}
+}
 .thumb{width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--line);flex-shrink:0}
 .thumb-e{width:56px;height:56px;border-radius:8px;border:1.5px dashed #b9cbdc;color:#b9cbdc;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0}
 .lb{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:120;touch-action:pan-y}
@@ -118,7 +134,7 @@ const URL0='https://ndbqaphghlfcsfkfwbnn.supabase.co/rest/v1/';
 const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kYnFhcGhnaGxmY3Nma2Z3Ym5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NTExNTIsImV4cCI6MjA5NDMyNzE1Mn0.F_iAEpv8yz7Cyy6ra6svJa8GdZnoyguayxAsFSuEcrY';
 const H={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
 const sb=window.supabase.createClient('https://ndbqaphghlfcsfkfwbnn.supabase.co',KEY);
-let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],PINHASH='';
+let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],SHIPS=[],PINHASH='';
 let SESSION=null,ME='',MENAME='',ISADMIN=false,READY=false;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -130,13 +146,14 @@ async function api(path,opt){
 }
 async function loadAll(){
   let ST;
-  [SHELVES,ITEMS,TX,REQS,PHOTOS,ARS,ST]=await Promise.all([
+  [SHELVES,ITEMS,TX,REQS,PHOTOS,ARS,SHIPS,ST]=await Promise.all([
     api('qr_shelves?select=*&order=sort'),
     api('qr_items?select=*&order=item_code&limit=5000'),
     api('qr_transactions?select=*&order=created_at.desc&limit=10000'),
     api('qr_change_requests?select=*&order=created_at.desc&limit=200'),
     api('qr_item_photos?select=*&order=sort,id&limit=10000'),
     ISADMIN?api('qr_access_requests?select=*&order=created_at.desc&limit=100'):Promise.resolve([]),
+    api('qr_shipments?select=*&order=ship_date.desc,id.desc&limit=100'),
     api('qr_settings?key=eq.approval_pin_hash&select=value')
   ]);
   PINHASH=ST?.[0]?.value||'';
@@ -177,6 +194,11 @@ function render(){
   $('hAppr').textContent=n?`✅ 承認(${n})`:'✅ 承認';
   const h=decodeURIComponent(location.hash.replace('#',''));
   if(h==='approvals'){renderApprovals();window.scrollTo(0,0);return;}
+  if(h==='newship'){renderNewShip();window.scrollTo(0,0);return;}
+  if(h.startsWith('S-')){
+    const sp=SHIPS.find(x=>x.id===+h.slice(2));
+    if(sp){renderShip(sp);window.scrollTo(0,0);return;}
+  }
   if(h.startsWith('I-')){
     const code=h.slice(2);
     const it=ITEMS.find(x=>(x.item_code||'')===code);
@@ -254,6 +276,8 @@ function renderDash(){
     return `<div class="hist">${fmtD(t.created_at)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ${esc(it?.name||'')} ｜ ${esc(t.shelf_code)} ${t.site?'→ '+esc(t.site):''}</div>`;}).join('')||'<div class="empty">まだ記録がありません</div>';
   $('app').innerHTML=`
     <div class="chips"><span class="chip cr">🚨 不足 ${nR}</span><span class="chip ca">⚠️ 注意 ${nA}</span><span class="chip cg">✅ 十分 ${nG}</span><span class="chip cn">棚 ${SHELVES.length}</span><span class="chip cn" style="cursor:pointer" onclick="doLogout()">👤 ${esc(MENAME)}｜ログアウト</span></div>
+    <button class="shipbtn" onclick="NEWSHIP=null;location.hash='newship'">🚚 出荷リストを作成（現場へ資材を送る）</button>
+    ${SHIPS.length?`<h2>最近の出荷</h2><div class="card">${SHIPS.slice(0,5).map(sp=>`<div class="hist" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">📄 ${esc(sp.ship_date)} ${esc(sp.site)} <span style="color:var(--blue)">［リストを開く］</span></div>`).join('')}</div>`:''}
     <h2>棚一覧（タップで棚ページへ）</h2><div class="shelfgrid">${shelfHtml}</div>
     <h2>要対応（不足・注意）</h2>${shortHtml}
     <h2>最近の記録</h2><div class="card">${recent}</div>`;
@@ -594,6 +618,143 @@ $('phFile').addEventListener('change',async e=>{
   }catch(err){toast('写真の登録に失敗しました');console.error(err);}
   finally{PH_TARGET=null;}
 });
+
+/* ---------- 出荷リスト ---------- */
+let NEWSHIP=null;
+const WDAY=['日','月','火','水','木','金','土'];
+function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function wdayOf(ds){return WDAY[new Date(ds+'T00:00:00').getDay()];}
+function siteList(){
+  const s=new Set();
+  SHIPS.forEach(x=>x.site&&s.add(x.site));
+  TX.forEach(t=>t.site&&s.add(t.site));
+  return [...s].slice(0,20);
+}
+function renderNewShip(){
+  if(!NEWSHIP)NEWSHIP={date:todayStr(),site:'',lines:[]};
+  $('hTitle').textContent='🚚 出荷リスト作成';
+  const lines=NEWSHIP.lines.map((l,i)=>{
+    const it=itemById(l.item_id);
+    return `<div class="card"><div class="itemrow">
+      <div style="flex:1"><div class="iname">${esc(it?.name)}</div><div class="imeta">${esc(l.shelf)}から ・ ${esc(it?.model||'')}</div></div>
+      <div><div class="iqty">${l.qty}</div><div class="iunit">${esc(it?.unit||'')}</div></div>
+      <button class="bset" onclick="NEWSHIP.lines.splice(${i},1);renderNewShip()">✖</button>
+    </div></div>`;
+  }).join('');
+  $('app').innerHTML=`
+    <div class="card">
+      <label style="font-size:.78rem;color:var(--gray)">出荷日</label>
+      <input id="shDate" type="date" value="${esc(NEWSHIP.date)}" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" onchange="NEWSHIP.date=this.value">
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">案件・行き先（必須）</label>
+      <input id="shSite" list="siteDL" value="${esc(NEWSHIP.site)}" placeholder="例: 石山案件" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="NEWSHIP.site=this.value">
+      <datalist id="siteDL">${siteList().map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
+    </div>
+    <h2>送る資材（${NEWSHIP.lines.length}件）</h2>
+    ${lines||'<div class="empty">まだ資材がありません。下のボタンで追加してください。</div>'}
+    <button class="baddbig" onclick="shipAddModal()">＋ 資材を追加</button>
+    <div class="btnrow" style="margin-top:4px">
+      <button class="mcancel" style="flex:1;padding:13px 0" onclick="NEWSHIP=null;location.hash=''">キャンセル</button>
+      <button class="mok in" style="flex:2;padding:13px 0" onclick="submitShip()">✅ 確定して出庫（リスト発行）</button>
+    </div>
+    <div class="cap">確定すると各資材が在庫から出庫され、印刷用リストが開きます</div>`;
+}
+window.shipAddModal=function(){
+  openMd(`<h3>＋ 送る資材を選択</h3>
+    <label>資材を検索</label>
+    <input id="mSearch" placeholder="品名・型番・コード" oninput="shipPickList()">
+    <div class="pick" id="mPick"></div>
+    <div class="mact"><button class="mcancel" onclick="closeMd()">閉じる</button></div>`);
+  shipPickList(); setTimeout(()=>$('mSearch').focus(),100);
+};
+window.shipPickList=function(){
+  const q=($('mSearch').value||'').toLowerCase();
+  const withStock=ITEMS.map(i=>{
+    const shelves=SHELVES.map(s=>({shelf:s.code,q:stocksFor(s.code)[i.id]||0})).filter(x=>x.q>0);
+    return {i,shelves,total:shelves.reduce((a,b)=>a+b.q,0)};
+  }).filter(x=>x.total>0)
+    .filter(x=>!q||(x.i.name+' '+(x.i.model||'')+' '+(x.i.item_code||'')).toLowerCase().includes(q)).slice(0,40);
+  $('mPick').innerHTML=withStock.map(x=>{const p=photosFor(x.i.id)[0];
+    return `<div class="pk" onclick='shipShelf(${x.i.id})'>${p?`<img class="pkt" src="${esc(p.url)}" loading="lazy">`:'<div class="pkt-e"></div>'}<div style="flex:1"><b>${esc(x.i.name)}</b><div class="m">在庫合計 ${x.total}${esc(x.i.unit||'')} ・ ${x.shelves.map(s=>s.shelf+':'+s.q).join(' / ')}</div></div></div>`;
+  }).join('')||'<div class="pk">在庫のある該当資材がありません</div>';
+};
+window.shipShelf=function(iid){
+  const it=itemById(iid);
+  const shelves=SHELVES.map(s=>({shelf:s.code,q:stocksFor(s.code)[iid]||0})).filter(x=>x.q>0);
+  if(shelves.length===1){shipQty(iid,shelves[0].shelf);return;}
+  openMd(`<h3>どの棚から出しますか？ — ${esc(it?.name)}</h3>
+    <div class="pick">${shelves.map(x=>`<div class="pk" onclick="shipQty(${iid},'${x.shelf}')"><div style="flex:1"><b>${x.shelf}</b></div><div>${x.q}${esc(it?.unit||'')}</div></div>`).join('')}</div>
+    <div class="mact"><button class="mcancel" onclick="shipAddModal()">戻る</button></div>`);
+};
+window.shipQty=function(iid,shelf){
+  const it=itemById(iid); const cur=stocksFor(shelf)[iid]||0;
+  openMd(`<h3>数量 — ${esc(it?.name)}</h3>
+    <label>${esc(shelf)} の在庫 ${cur}${esc(it?.unit||'')} のうち、送る数量</label>
+    <input id="mQty" type="number" inputmode="decimal" min="0.1" step="any">
+    <div class="qbtns">${[1,2,5,10].map(n=>`<button onclick="$('mQty').value=${n}">${n}</button>`).join('')}</div>
+    <div class="mact"><button class="mcancel" onclick="shipAddModal()">戻る</button>
+    <button class="mok in" onclick="shipAddLine(${iid},'${shelf}')">リストに追加</button></div>`);
+  setTimeout(()=>$('mQty').focus(),100);
+};
+window.shipAddLine=function(iid,shelf){
+  const q=Number($('mQty').value); if(!q||q<=0){toast('数量を入力してください');return;}
+  const cur=stocksFor(shelf)[iid]||0;
+  const already=NEWSHIP.lines.filter(l=>l.item_id===iid&&l.shelf===shelf).reduce((a,l)=>a+l.qty,0);
+  if(q+already>cur){toast(`在庫不足です（${shelf} 残 ${cur}、リスト済 ${already}）`);return;}
+  NEWSHIP.lines.push({item_id:iid,shelf,qty:q});
+  closeMd();renderNewShip();toast('追加しました');
+};
+window.submitShip=async function(){
+  if(!NEWSHIP.site.trim()){toast('案件・行き先を入力してください');return;}
+  if(!NEWSHIP.lines.length){toast('資材を追加してください');return;}
+  if(!confirm(`${NEWSHIP.date}（${wdayOf(NEWSHIP.date)}） ${NEWSHIP.site}\n${NEWSHIP.lines.length}件の資材を出庫してリストを発行します。よろしいですか？`))return;
+  try{
+    const sp=await api('qr_shipments?select=id',{method:'POST',headers:Object.assign({},H,{'Prefer':'return=representation'}),
+      body:JSON.stringify({ship_date:NEWSHIP.date,site:NEWSHIP.site.trim(),created_by:localStorage.getItem('qr_who')||MENAME})});
+    const sid=sp[0].id;
+    await api('qr_transactions',{method:'POST',body:JSON.stringify(NEWSHIP.lines.map(l=>({
+      shelf_code:l.shelf,item_id:l.item_id,qty:-l.qty,kind:'out',site:NEWSHIP.site.trim(),
+      shipment_id:sid,created_by:localStorage.getItem('qr_who')||MENAME})))});
+    NEWSHIP=null;
+    await loadAll();location.hash='S-'+sid;render();toast('出荷リストを発行しました');
+  }catch(e){toast('エラー: 発行できませんでした');console.error(e);}
+};
+function renderShip(sp){
+  $('hTitle').textContent='📄 出荷リスト';
+  const txs=TX.filter(t=>t.shipment_id===sp.id);
+  const agg={};
+  txs.forEach(t=>{agg[t.item_id]=(agg[t.item_id]||0)+(-Number(t.qty));});
+  const rows=Object.entries(agg).map(([iid,q],idx)=>{
+    const it=itemById(+iid);
+    const code=it?.item_code||('id'+iid);
+    const qr=qrcode(0,'M');qr.addData(location.origin+location.pathname+'#I-'+encodeURIComponent(code));qr.make();
+    const img=qr.createDataURL(4,2);
+    return `<tr>
+      <td class="ntd" style="width:36px;font-weight:400">${idx+1}</td>
+      <td class="qtd"><img src="${img}" style="width:60px;height:60px;image-rendering:pixelated"><div style="font-size:.65rem;font-weight:700">${esc(code)}</div></td>
+      <td><b>${esc(it?.name||'')}</b>${it?.model?`<div style="font-size:.75rem;color:#475569">${esc(it.model)}</div>`:''}</td>
+      <td class="ntd">${q} <span style="font-size:.7rem;font-weight:400">${esc(it?.unit||'')}</span></td>
+    </tr>`;
+  }).join('');
+  $('app').innerHTML=`
+    <div class="btnrow noprint" style="margin-bottom:10px">
+      <button class="mcancel" style="flex:1;padding:12px 0" onclick="location.hash=''">← 戻る</button>
+      <button class="mok" style="flex:2;padding:12px 0" onclick="window.print()">🖨 印刷（A4）</button>
+    </div>
+    <div class="sdoc">
+      <h1>出荷リスト</h1>
+      <div style="font-size:.8rem;color:#475569">しろくま電力株式会社 購買部 ・ 野田倉庫</div>
+      <div class="smeta">
+        <div>📅 出荷日: <b>${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）</b></div>
+        <div>📍 案件: <b>${esc(sp.site)}</b></div>
+        <div>担当: ${esc(sp.created_by||'')}</div>
+      </div>
+      <table>
+        <tr><th style="width:36px">No</th><th style="width:80px">QR</th><th>品名・型番</th><th style="width:92px">数量</th></tr>
+        ${rows}
+      </table>
+      <div class="foot">※ 各QRコードをスマホで読み取ると、その資材の倉庫在庫（残数・保管場所）が確認できます（要ログイン・承認済みアカウント）。<br>発行: ${esc(sp.created_at?.slice(0,10)||'')} ・ リストNo. S-${sp.id}</div>
+    </div>`;
+}
 
 /* ---------- 認証（Googleログイン + 承認制アクセス） ---------- */
 async function rpcBool(fn){
