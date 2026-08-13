@@ -675,12 +675,12 @@ $('phFile').addEventListener('change',async e=>{
 });
 
 /* ---------- 記録・分析 ---------- */
-let LOGTAB='ledger',LOGKIND='all',LOGITEM=null,LOGQ='';
+let LOGTAB='ledger',LOGKIND='all',LOGITEM=null,LOGQ='',LOGD1='',LOGD2='';
 function kindJ(k){return k==='out'?'出庫':k==='in'?'入庫':k==='init'?'初期登録':'調整';}
 function txSorted(){return TX.slice().sort((a,b)=>txTime(b)-txTime(a)||b.id-a.id);}
 window.setLogTab=function(t){
   LOGTAB=t;
-  LOGQ='';LOGITEM=null;LOGKIND='all';SITEQ='';OPENSITE=-1; // 탭 클릭 시 검색·필터 초기화
+  LOGQ='';LOGITEM=null;LOGKIND='all';SITEQ='';OPENSITE=-1;LOGD1='';LOGD2=''; // 탭 클릭 시 검색·필터 초기화
   renderLog();
 };
 function renderLog(){
@@ -692,10 +692,14 @@ function renderLog(){
   </div>`;
   $('app').innerHTML=tabs+(LOGTAB==='ledger'?logLedger():LOGTAB==='item'?logItem():logFlow());
 }
+function txDateStr(t){return t.tx_date||(t.created_at||'').slice(0,10);}
+function txInRange(t){const d=txDateStr(t);
+  if(LOGD1&&d<LOGD1)return false; if(LOGD2&&d>LOGD2)return false; return true;}
 function logLedger(){
   const kinds=[['all','すべて'],['in','入庫'],['out','出庫'],['adjust','調整'],['init','初期']];
   const chips=kinds.map(([k,l])=>`<span class="chip ${LOGKIND===k?'cr':'cn'}" style="cursor:pointer" onclick="LOGKIND='${k}';renderLog()">${l}</span>`).join('');
-  const list=txSorted().filter(t=>LOGKIND==='all'||t.kind===LOGKIND).slice(0,300);
+  const filtered=txSorted().filter(t=>(LOGKIND==='all'||t.kind===LOGKIND)&&txInRange(t));
+  const list=filtered.slice(0,300);
   const rows=list.map(t=>{const it=itemById(t.item_id);
     return `<tr><td>${esc(t.tx_date||(t.created_at||'').slice(0,10))}</td>
       <td><b class="${t.kind==='out'?'out':t.kind==='in'?'in':'adj'}" style="color:${t.kind==='out'?'var(--blue)':t.kind==='in'?'var(--green)':'var(--amber)'}">${kindJ(t.kind)}</b></td>
@@ -706,22 +710,37 @@ function logLedger(){
       <td>${esc(t.created_by||'')}</td></tr>`;
   }).join('');
   return `<div class="chips">${chips}</div>
+    <div class="card" style="padding:10px 14px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.82rem">
+        <span style="color:var(--gray)">📅 期間:</span>
+        <input type="date" value="${esc(LOGD1)}" onchange="LOGD1=this.value;renderLog()" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-size:.9rem">
+        <span>〜</span>
+        <input type="date" value="${esc(LOGD2)}" onchange="LOGD2=this.value;renderLog()" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-size:.9rem">
+        ${(LOGD1||LOGD2)?`<button class="bset" style="padding:7px 14px" onclick="LOGD1='';LOGD2='';renderLog()">✖ クリア</button>`:''}
+        <span style="color:var(--navy);font-weight:700;margin-left:auto">${filtered.length}件</span>
+      </div></div>
     <div class="twrap"><table class="lt">
       <tr><th>日付</th><th>種別</th><th>資材</th><th class="r">数量</th><th>棚</th><th>案件・仕入先</th><th>担当</th></tr>
       ${rows||'<tr><td colspan="7" style="text-align:center;color:var(--gray)">記録がありません</td></tr>'}
     </table></div>
-    <div class="cap">最新300件を表示（全記録はCSVで）</div>
-    <button class="shipbtn" onclick="dlCSV()">⬇ 全記録をCSVダウンロード（Excelで開けます）</button>`;
+    <div class="cap">表は最新300件まで表示（CSVは件数制限なし）</div>
+    <button class="shipbtn" onclick="dlCSV('filtered')">⬇ この条件でCSVダウンロード（期間・種別を反映 / ${filtered.length}件）</button>
+    <button class="shipbtn" style="background:#475569" onclick="dlCSV('all')">⬇ 全期間・全記録をCSVダウンロード</button>`;
 }
-window.dlCSV=function(){
+window.dlCSV=function(mode){
   const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
+  const src=mode==='filtered'
+    ?txSorted().filter(t=>(LOGKIND==='all'||t.kind===LOGKIND)&&txInRange(t))
+    :txSorted();
+  if(!src.length){toast('該当する記録がありません');return;}
   const head='日付,種別,資材コード,品名,数量,単位,棚,案件・仕入先,担当,リストNo,登録日時\n';
-  const lines=txSorted().map(t=>{const it=itemById(t.item_id);
-    return [t.tx_date||(t.created_at||'').slice(0,10),kindJ(t.kind),it?.item_code||'',q(it?.name||''),t.qty,it?.unit||'',t.shelf_code,q(t.site||''),q(t.created_by||''),t.shipment_id?'S-'+t.shipment_id:'',(t.created_at||'').slice(0,16).replace('T',' ')].join(',');
+  const lines=src.map(t=>{const it=itemById(t.item_id);
+    return [txDateStr(t),kindJ(t.kind),it?.item_code||'',q(it?.name||''),t.qty,it?.unit||'',t.shelf_code,q(t.site||''),q(t.created_by||''),t.shipment_id?'S-'+t.shipment_id:'',(t.created_at||'').slice(0,16).replace('T',' ')].join(',');
   });
+  const tag=mode==='filtered'?((LOGD1||'最初')+'〜'+(LOGD2||todayStr())+(LOGKIND!=='all'?'_'+kindJ(LOGKIND):'')):'全期間';
   const blob=new Blob(['﻿'+head+lines.join('\n')],{type:'text/csv'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='在庫記録_'+todayStr()+'.csv';a.click();
-  toast('CSVをダウンロードしました');
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='在庫記録_'+tag+'_'+todayStr()+'.csv';a.click();
+  toast('CSVをダウンロードしました（'+src.length+'件）');
 };
 window.setLogItem=function(id){LOGITEM=id;renderLog();};
 window.logItemMatches=function(){
