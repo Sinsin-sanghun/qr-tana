@@ -78,6 +78,8 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 .barrow .bl{width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
 .barrow .bar{height:15px;background:var(--blue);border-radius:4px;min-width:3px}
 .barrow .bv{font-weight:700;color:var(--navy);flex-shrink:0}
+.ctip{position:fixed;z-index:200;background:#16324f;color:#fff;padding:11px 14px;border-radius:10px;font-size:.8rem;display:none;max-width:250px;box-shadow:0 6px 20px rgba(0,0,0,.35);cursor:pointer;line-height:1.5}
+.ctip .go{margin-top:6px;color:#9fc3ea;font-weight:700}
 .sdoc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:26px 24px;margin-bottom:14px}
 .sdoc h1{font-size:1.25rem;color:#111;border-bottom:3px solid #16324f;padding-bottom:8px;margin-bottom:4px}
 .sdoc .smeta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:.95rem;margin:10px 0 14px}
@@ -126,6 +128,7 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 <div class="wrap" id="app"><div class="loading">読み込み中…</div></div>
 <div class="ov" id="ov"><div class="md" id="md"></div></div>
 <div class="toast" id="toast"></div>
+<div class="ctip" id="ctip" onmouseenter="TIPKEEP=true" onmouseleave="TIPKEEP=false;hideTipSoon()" onclick="tipNav()"></div>
 <div class="lb" id="lb">
   <div class="lbtop"><span class="lbcnt" id="lbCnt"></span><button class="lbx" onclick="lbClose()">✕</button></div>
   <div class="lbnavL" onclick="lbNav(-1)"></div>
@@ -205,6 +208,7 @@ function siteTxt(t){return t.site?(t.kind==='in'?'仕入: ':'→ ')+esc(t.site):
 
 /* ---------- views ---------- */
 function render(){
+  const tip=$('ctip'); if(tip)tip.style.display='none';
   const n=pendingReqs().length+(ISADMIN?pendingARs().length:0);
   $('hAppr').textContent=n?`✅ 承認(${n})`:'✅ 承認';
   const h=decodeURIComponent(location.hash.replace('#',''));
@@ -707,6 +711,20 @@ function logItem(){
   let tin=0,tout=0,tadj=0,cur=0;
   txs.forEach(t=>{const v=Number(t.qty);cur+=v;
     if(t.kind==='in')tin+=v; else if(t.kind==='out')tout+=-v; else tadj+=v;});
+  let run=0,peak=0;
+  txs.slice().reverse().forEach(t=>{run+=Number(t.qty);if(run>peak)peak=run;});
+  const shelvesNow=SHELVES.map(s=>({c:s.code,q:stocksFor(s.code)[it.id]||0})).filter(x=>x.q>0);
+  const out90=txs.filter(t=>t.kind==='out'&&Date.now()-txTime(t)<=90*864e5).reduce((a,t)=>a+(-Number(t.qty)),0);
+  const spanDays=Math.min(90,Math.max(7,(Date.now()-Math.min(...txs.map(txTime)))/864e5));
+  const daily=out90/spanDays;
+  let fc='';
+  if(cur<=0)fc='現在、在庫はありません。';
+  else if(daily<=0)fc='直近90日の出庫がないため、在庫切れの予測はありません。';
+  else{const days=cur/daily;const dd=new Date(Date.now()+days*864e5);
+    const jun=dd.getDate()<=10?'上旬':dd.getDate()<=20?'中旬':'下旬';
+    fc=`現在の出庫ペース（約${daily.toFixed(1)}${esc(it.unit||'')}/日）が続くと、<b>約${Math.round(days)}日後 — ${dd.getFullYear()}年${dd.getMonth()+1}月${jun}頃</b>に在庫切れの見込みです。`;}
+  const pct=peak>0?Math.round(cur/peak*100):0;
+  const pcol=pct>50?'var(--green)':pct>20?'var(--amber)':'var(--red)';
   const bySite={};
   txs.filter(t=>t.kind==='out').forEach(t=>{const s=t.site||'（案件未記入）';
     bySite[s]=bySite[s]||{n:0,q:0};bySite[s].n++;bySite[s].q+=-Number(t.qty);});
@@ -727,6 +745,13 @@ function logItem(){
       </div></div>
     <h2>在庫の推移グラフ（点＝入出庫1件ごと・線＝残量）</h2>
     <div class="card" style="overflow-x:auto">${itemChartSvg(txs)}</div>
+    <h2>現在の保管場所・残量予測</h2>
+    <div class="card">
+      <div class="chips">${shelvesNow.map(x=>`<a class="chip cn" href="#${x.c}" style="text-decoration:none">📍 ${x.c}: <b>${x.q}</b>${esc(it.unit||'')}</a>`).join('')||'<span class="chip cn">現在どの棚にも在庫なし</span>'}</div>
+      <div style="font-size:.82rem;color:var(--gray);margin:8px 0 5px">過去最大在庫 ${peak}${esc(it.unit||'')} に対して現在 <b style="color:${pcol};font-size:1rem">${pct}%</b></div>
+      <div style="background:#e2e8f0;border-radius:8px;height:16px;overflow:hidden"><div style="width:${Math.min(100,pct)}%;height:100%;background:${pcol};transition:.3s"></div></div>
+      <div style="font-size:.85rem;margin-top:11px">📉 ${fc}</div>
+    </div>
     <h2>案件別の出庫先（どこにどれだけ出たか）</h2>
     <div class="twrap"><table class="lt" style="min-width:340px">
       <tr><th>案件・行き先</th><th class="r">回数</th><th class="r">数量</th></tr>
@@ -739,15 +764,17 @@ function logItem(){
     </table></div>`;
 }
 let SITEQ='',OPENSITE=-1,SITEARR=[];
+let CHART_TXS=[],TIPIDX=-1,TIPKEEP=false,TIPTIMER=null;
 function itemChartSvg(txsDesc){
   const arr=txsDesc.slice().reverse();
+  CHART_TXS=arr;
   if(!arr.length)return '<div class="empty">記録がまだありません</div>';
   let bal=0;
   const pts=arr.map(t=>{bal+=Number(t.qty);
-    return {d:(t.tx_date||(t.created_at||'').slice(0,10)),q:Number(t.qty),kind:t.kind,bal};});
+    return {t,d:(t.tx_date||(t.created_at||'').slice(0,10)),q:Number(t.qty),kind:t.kind,bal};});
   const n=pts.length;
-  const step=Math.max(52,Math.min(90,560/n));
-  const W=Math.max(480,n*step+70),Hh=235,base=175,chartH=110,x0=40;
+  const step=Math.max(58,Math.min(95,560/n));
+  const W=Math.max(480,n*step+80),Hh=262,base=185,chartH=115,x0=44;
   const maxY=Math.max(1,...pts.map(p=>p.bal));
   const yOf=v=>base-(v/maxY*chartH);
   let line='',dots='',labels='';
@@ -756,22 +783,52 @@ function itemChartSvg(txsDesc){
     const cy=yOf(p.bal);
     line+=(idx?'L':'M')+cx+' '+cy+' ';
     const col=p.kind==='in'?'#2f855a':p.kind==='out'?'#2b6cb0':'#b7791f';
-    dots+=`<circle cx="${cx}" cy="${cy}" r="5" fill="${col}" stroke="#fff" stroke-width="1.5"/>`;
-    dots+=`<text x="${cx}" y="${cy-11}" text-anchor="middle" font-size="11.5" fill="#16324f" font-weight="800">${p.bal}</text>`;
-    labels+=`<text x="${cx}" y="${cy+18}" text-anchor="middle" font-size="10.5" fill="${col}" font-weight="700">${p.q>0?'+':''}${p.q}</text>`;
+    if(idx===0)labels+=`<text x="${cx}" y="${cy-26}" text-anchor="middle" font-size="10" fill="#64748b">開始</text>`;
     labels+=`<text x="${cx}" y="${base+22}" text-anchor="middle" font-size="10.5" fill="#64748b">${esc(p.d.slice(5).replace('-','/'))}</text>`;
+    if(p.kind==='out'&&p.t.site)labels+=`<text x="${cx}" y="${base+37}" text-anchor="middle" font-size="9.5" fill="#2b6cb0" font-weight="700">${esc(String(p.t.site).slice(0,6))}</text>`;
+    if(p.kind==='in'&&p.t.site)labels+=`<text x="${cx}" y="${base+37}" text-anchor="middle" font-size="9.5" fill="#2f855a" font-weight="700">${esc(String(p.t.site).slice(0,6))}</text>`;
+    dots+=`<g style="cursor:pointer" onmouseenter="showTip(event,${idx})" onmouseleave="hideTipSoon()" onclick="showTip(event,${idx})">
+      <circle cx="${cx}" cy="${cy}" r="12" fill="transparent"/>
+      <circle cx="${cx}" cy="${cy}" r="5.5" fill="${col}" stroke="#fff" stroke-width="1.5"/>
+      <text x="${cx}" y="${cy-11}" text-anchor="middle" font-size="11.5" fill="#16324f" font-weight="800">${p.bal}</text>
+      <text x="${cx}" y="${cy+19}" text-anchor="middle" font-size="10.5" fill="${col}" font-weight="700">${p.q>0?'+':''}${p.q}</text></g>`;
   });
   return `<svg viewBox="0 0 ${W} ${Hh}" style="height:auto;min-width:${Math.min(W,900)}px;width:${W}px">
     <line x1="0" y1="${base}" x2="${W}" y2="${base}" stroke="#c9d8e6" stroke-width="1.5"/>
     <path d="${line}" fill="none" stroke="#16324f" stroke-width="2.5"/>
-    ${dots}${labels}
+    ${labels}${dots}
     <g font-size="11.5">
       <circle cx="16" cy="14" r="5" fill="#2f855a"/><text x="26" y="19" fill="#475569">入庫</text>
       <circle cx="70" cy="14" r="5" fill="#2b6cb0"/><text x="80" y="19" fill="#475569">出庫</text>
       <circle cx="124" cy="14" r="5" fill="#b7791f"/><text x="134" y="19" fill="#475569">初期・調整</text>
-      <line x1="208" y1="14" x2="232" y2="14" stroke="#16324f" stroke-width="2.5"/><text x="238" y="19" fill="#475569">残量の推移</text>
+      <line x1="208" y1="14" x2="232" y2="14" stroke="#16324f" stroke-width="2.5"/><text x="238" y="19" fill="#475569">残量の推移（点にカーソル／タップで案件表示）</text>
     </g></svg>`;
 }
+window.showTip=function(ev,idx){
+  clearTimeout(TIPTIMER);TIPIDX=idx;
+  const t=CHART_TXS[idx]; if(!t)return;
+  const it=itemById(t.item_id);
+  const q=Number(t.qty);
+  const el=$('ctip');
+  el.innerHTML=`<b>${esc(t.tx_date||(t.created_at||'').slice(0,10))} ${kindJ(t.kind)} ${q>0?'+':''}${q}${esc(it?.unit||'')}</b><br>
+    ${t.site?(t.kind==='in'?'🏭 仕入先: ':'📍 案件: ')+'<b>'+esc(t.site)+'</b>':'（相手先未記入）'}<br>
+    棚 ${esc(t.shelf_code)}${t.created_by?' ・ 担当 '+esc(t.created_by):''}${t.shipment_id?' ・ 出荷リスト S-'+t.shipment_id:''}
+    <div class="go">▶ ここをタップ/クリックで詳細データへ</div>`;
+  el.style.display='block';
+  const x=Math.max(8,Math.min(ev.clientX+14,window.innerWidth-260));
+  const y=Math.max(8,ev.clientY-110);
+  el.style.left=x+'px';el.style.top=y+'px';
+};
+window.hideTipSoon=function(){
+  clearTimeout(TIPTIMER);
+  TIPTIMER=setTimeout(()=>{if(!TIPKEEP){$('ctip').style.display='none';TIPIDX=-1;}},300);
+};
+window.tipNav=function(){
+  const t=CHART_TXS[TIPIDX]; if(!t)return;
+  $('ctip').style.display='none';TIPKEEP=false;
+  if(t.shipment_id){location.hash='S-'+t.shipment_id;}
+  else{LOGTAB='ledger';LOGKIND=t.kind;if(location.hash==='#log')renderLog();else location.hash='log';}
+};
 function siteData(){
   const map={};
   TX.forEach(t=>{if(t.kind!=='out')return;const s=t.site||'（未記入）';
