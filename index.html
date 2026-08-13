@@ -237,7 +237,7 @@ function render(){
   }
   if(h.startsWith('I-')){
     const code=h.slice(2);
-    const it=ITEMS.find(x=>(x.item_code||'')===code);
+    const it=ITEMS.find(x=>(x.item_code||'')===code||(x.loc_code||'')===code);
     if(it){renderItem(it);window.scrollTo(0,0);return;}
   }
   const shelf=SHELVES.find(s=>s.code===h);
@@ -245,7 +245,7 @@ function render(){
   window.scrollTo(0,0);
 }
 function renderItem(it){
-  $('hTitle').textContent='📦 '+(it.item_code||'資材');
+  $('hTitle').textContent='📦 '+(it.loc_code||it.item_code||'資材');
   const phs=photosFor(it.id);
   const phHtml=phs.length?`<div style="display:flex;gap:8px;overflow-x:auto;margin:10px 0 4px">${phs.map(p=>`<img src="${esc(p.url)}" loading="lazy" style="width:86px;height:86px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex-shrink:0" onclick="showPhs(${it.id})">`).join('')}</div>`:'';
   let total=0;
@@ -269,7 +269,7 @@ function renderItem(it){
     <div class="card">
       <div class="itemrow">
         <div style="flex:1"><div class="iname" style="font-size:1.02rem">${esc(it.name)}</div>
-        <div class="imeta">${esc(it.model||'')} [${esc(it.item_code||'')}] ・ 単位 ${esc(it.unit||'')}</div></div>
+        <div class="imeta">${it.loc_code?'<b style="color:var(--blue)">['+esc(it.loc_code)+']</b> ':''}${esc(it.model||'')} [${esc(it.item_code||'')}] ・ 単位 ${esc(it.unit||'')}</div></div>
         <div><div class="iqty">${total}</div><div class="iunit">全棚合計</div></div>
       </div>
       ${phHtml}
@@ -344,7 +344,7 @@ function renderShelf(s){
     return `<div class="card ${j.k==='br'?'warn':''}">
       <div class="itemrow">
         ${th}
-        <div style="flex:1"><div class="iname">${esc(it?.name)}</div><div class="imeta">${esc(it?.model||'')} ${it?.item_code?'['+esc(it.item_code)+']':''}</div></div>
+        <div style="flex:1"><div class="iname">${esc(it?.name)}</div><div class="imeta"><b style="color:var(--blue)">[${esc(it?.loc_code||it?.item_code||'')}]</b> ${esc(it?.model||'')}${it?.loc_code&&it?.item_code?' ・ '+esc(it.item_code):''}</div></div>
         <div><div class="iqty" style="color:${j.k==='br'?'var(--red)':j.k==='ba'?'var(--amber)':'var(--navy)'}">${q}</div><div class="iunit">${esc(it?.unit||'')}</div></div>
         <span class="badge ${j.k}">${j.t}</span>
       </div>
@@ -412,6 +412,8 @@ window.minModal=function(iid){
     <label>品名</label><input id="sName" value="${esc(it?.name||'')}">
     <label>型番</label><input id="sModel" value="${esc(it?.model||'')}">
     <label>単位</label><select id="sUnit">${units.map(u=>`<option ${it?.unit===u?'selected':''}>${u}</option>`).join('')}</select>
+    <label>管理番号（棚ベース ・ 例 A-1-1-3）</label>
+    <input id="sLoc" value="${esc(it?.loc_code||'')}" placeholder="棚に登録すると自動付与されます">
     <label>最低在庫（この数以下で「不足」表示）</label>
     <input id="sMin" type="number" inputmode="decimal" min="0" step="any" value="${Number(it?.min_qty||0)}">
     <div class="mact"><button class="mcancel" onclick="showItemQR(${iid})">📇 QRコード</button>
@@ -420,10 +422,11 @@ window.minModal=function(iid){
 };
 window.doItemSave=async function(iid){
   const name=($('sName').value||'').trim(); if(!name){toast('品名を入力してください');return;}
+  const loc=($('sLoc').value||'').trim();
   try{await api('qr_items?id=eq.'+iid,{method:'PATCH',body:JSON.stringify({
-      name,model:($('sModel').value||'').trim(),unit:$('sUnit').value,min_qty:Number($('sMin').value||0)})});
+      name,model:($('sModel').value||'').trim(),unit:$('sUnit').value,min_qty:Number($('sMin').value||0),loc_code:loc||null})});
     await loadAll();closeMd();render();toast('保存しました');}
-  catch(e){toast('エラー');console.error(e);}
+  catch(e){toast((String(e).includes('duplicate')||String(e).includes('unique'))?'その管理番号は既に使われています':'エラー');console.error(e);}
 };
 window.showItemQR=function(iid){
   const it=itemById(iid); if(!it)return;
@@ -434,8 +437,9 @@ window.showItemQR=function(iid){
   openMd(`<h3>📇 資材QRコード</h3>
     <div style="text-align:center">
       <img src="${img}" style="width:230px;height:230px;image-rendering:pixelated;border:1px solid var(--line);border-radius:8px;background:#fff">
-      <div style="font-weight:800;color:var(--navy);font-size:1.1rem;margin-top:8px">${esc(code)}</div>
-      <div style="font-size:.9rem">${esc(it.name)}</div>
+      <div style="font-weight:800;color:var(--navy);font-size:1.25rem;margin-top:8px">${esc(it.loc_code||code)}</div>
+      ${it.loc_code?`<div style="font-size:.75rem;color:var(--gray)">参照コード: ${esc(code)}</div>`:''}
+      <div style="font-size:.9rem;margin-top:2px">${esc(it.name)}</div>
       <div style="font-size:.75rem;color:var(--gray);margin-top:10px">スキャンするとこの資材の専用ページが開きます<br>（全保管場所の在庫・入出庫）。<br>スクリーンショット→印刷して資材や箱に貼ってください。</div>
     </div>
     <div class="mact"><button class="mcancel" onclick="closeMd()">閉じる</button></div>`);
@@ -451,8 +455,8 @@ window.addModal=function(shelf){
 };
 window.pickList=function(shelf){
   const q=($('mSearch').value||'').toLowerCase();
-  const hits=ITEMS.filter(i=>!q||(i.name+' '+(i.model||'')+' '+(i.item_code||'')).toLowerCase().includes(q)).slice(0,40);
-  $('mPick').innerHTML=hits.map(i=>{const p=photosFor(i.id)[0];return `<div class="pk" onclick="initQty(${i.id},'${shelf}')">${p?`<img class="pkt" src="${esc(p.url)}" loading="lazy">`:'<div class="pkt-e"></div>'}<div style="flex:1"><b>${esc(i.name)}</b><div class="m">${esc(i.item_code||'')} ${esc(i.model||'')} ・ ${esc(i.package||'')}</div></div></div>`;}).join('')||'<div class="pk">該当なし → 下の「新規資材を作成」へ</div>';
+  const hits=ITEMS.filter(i=>!q||(i.name+' '+(i.model||'')+' '+(i.item_code||'')+' '+(i.loc_code||'')).toLowerCase().includes(q)).slice(0,40);
+  $('mPick').innerHTML=hits.map(i=>{const p=photosFor(i.id)[0];return `<div class="pk" onclick="initQty(${i.id},'${shelf}')">${p?`<img class="pkt" src="${esc(p.url)}" loading="lazy">`:'<div class="pkt-e"></div>'}<div style="flex:1"><b>${esc(i.name)}</b><div class="m">${i.loc_code?'<b style="color:var(--blue)">['+esc(i.loc_code)+']</b> ':''}${esc(i.item_code||'')} ${esc(i.model||'')} ・ ${esc(i.package||'')}</div></div></div>`;}).join('')||'<div class="pk">該当なし → 下の「新規資材を作成」へ</div>';
 };
 window.initQty=function(iid,shelf){
   const it=itemById(iid);
@@ -465,7 +469,18 @@ window.initQty=function(iid,shelf){
 };
 window.doInit=async function(iid,shelf){
   const q=Number($('mQty').value); if(!q||q<0){toast('数量を入力してください');return;}
-  try{await api('qr_transactions',{method:'POST',body:JSON.stringify({shelf_code:shelf,item_id:iid,qty:q,kind:'init',created_by:localStorage.getItem('qr_who')||''})});
+  try{
+    await api('qr_transactions',{method:'POST',body:JSON.stringify({shelf_code:shelf,item_id:iid,qty:q,kind:'init',created_by:localStorage.getItem('qr_who')||''})});
+    // 관리번호 자동 부여: 선반코드-순번 (예 A-1-1-3)
+    const it=itemById(iid);
+    if(it&&!it.loc_code){
+      const pre=shelf+'-';
+      let mx=0;ITEMS.forEach(x=>{if(x.loc_code&&x.loc_code.startsWith(pre)){const n=parseInt(x.loc_code.slice(pre.length));if(n>mx)mx=n;}});
+      for(let s2=mx+1;s2<=mx+5;s2++){
+        try{await api('qr_items?id=eq.'+iid,{method:'PATCH',body:JSON.stringify({loc_code:pre+s2})});break;}
+        catch(e){/* 번호 충돌 시 다음 번호 재시도 */}
+      }
+    }
     await loadAll();closeMd();render();toast('登録しました');}
   catch(e){toast('エラー');console.error(e);}
 };
@@ -749,9 +764,9 @@ window.dlCSV=function(mode){
 window.setLogItem=function(id){LOGITEM=id;renderLog();};
 window.logItemMatches=function(){
   const q=LOGQ.toLowerCase();
-  const hits=ITEMS.filter(i=>q&&(i.name+' '+(i.model||'')+' '+(i.item_code||'')).toLowerCase().includes(q)).slice(0,30);
+  const hits=ITEMS.filter(i=>q&&(i.name+' '+(i.model||'')+' '+(i.item_code||'')+' '+(i.loc_code||'')).toLowerCase().includes(q)).slice(0,30);
   return hits.map(i=>{const p=photosFor(i.id)[0];
-    return `<div class="pk" onclick="setLogItem(${i.id})">${p?`<img class="pkt" src="${esc(p.url)}" loading="lazy">`:'<div class="pkt-e"></div>'}<div style="flex:1"><b>${esc(i.name)}</b><div class="m">${esc(i.item_code||'')} ${esc(i.model||'')}</div></div></div>`;
+    return `<div class="pk" onclick="setLogItem(${i.id})">${p?`<img class="pkt" src="${esc(p.url)}" loading="lazy">`:'<div class="pkt-e"></div>'}<div style="flex:1"><b>${esc(i.name)}</b><div class="m">${i.loc_code?'<b style="color:var(--blue)">['+esc(i.loc_code)+']</b> ':''}${esc(i.item_code||'')} ${esc(i.model||'')}</div></div></div>`;
   }).join('')||(q?'<div class="pk">該当なし</div>':'<div class="pk" style="color:var(--gray)">上の検索欄に品名・型番・コードを入力してください</div>');
 };
 function logItem(){
@@ -1024,9 +1039,9 @@ window.shipPickList=function(){
     const shelves=SHELVES.map(s=>({shelf:s.code,q:stocksFor(s.code)[i.id]||0})).filter(x=>x.q>0);
     return {i,shelves,total:shelves.reduce((a,b)=>a+b.q,0)};
   }).filter(x=>x.total>0)
-    .filter(x=>!q||(x.i.name+' '+(x.i.model||'')+' '+(x.i.item_code||'')).toLowerCase().includes(q)).slice(0,40);
+    .filter(x=>!q||(x.i.name+' '+(x.i.model||'')+' '+(x.i.item_code||'')+' '+(x.i.loc_code||'')).toLowerCase().includes(q)).slice(0,40);
   $('mPick').innerHTML=withStock.map(x=>{const p=photosFor(x.i.id)[0];
-    return `<div class="pk" onclick='shipShelf(${x.i.id})'>${p?`<img class="pkt" src="${esc(p.url)}" loading="lazy">`:'<div class="pkt-e"></div>'}<div style="flex:1"><b>${esc(x.i.name)}</b><div class="m">在庫合計 ${x.total}${esc(x.i.unit||'')} ・ ${x.shelves.map(s=>s.shelf+':'+s.q).join(' / ')}</div></div></div>`;
+    return `<div class="pk" onclick='shipShelf(${x.i.id})'>${p?`<img class="pkt" src="${esc(p.url)}" loading="lazy">`:'<div class="pkt-e"></div>'}<div style="flex:1"><b>${esc(x.i.name)}</b><div class="m">${x.i.loc_code?'<b style="color:var(--blue)">['+esc(x.i.loc_code)+']</b> ':''}在庫合計 ${x.total}${esc(x.i.unit||'')} ・ ${x.shelves.map(s=>s.shelf+':'+s.q).join(' / ')}</div></div></div>`;
   }).join('')||'<div class="pk">在庫のある該当資材がありません</div>';
 };
 window.shipShelf=function(iid){
@@ -1115,7 +1130,7 @@ function renderShip(sp){
     const img=qr.createDataURL(4,2);
     return `<tr>
       <td class="ntd" style="width:36px;font-weight:400">${idx+1}</td>
-      <td class="qtd"><img src="${img}" style="width:60px;height:60px;image-rendering:pixelated"><div style="font-size:.65rem;font-weight:700">${esc(code)}</div></td>
+      <td class="qtd"><img src="${img}" style="width:60px;height:60px;image-rendering:pixelated"><div style="font-size:.65rem;font-weight:700">${esc(it?.loc_code||code)}</div></td>
       <td><b>${esc(it?.name||'')}</b>${it?.model?`<div style="font-size:.75rem;color:#475569">${esc(it.model)}</div>`:''}</td>
       <td class="ntd">${q} <span style="font-size:.7rem;font-weight:400">${esc(it?.unit||'')}</span></td>
     </tr>`;
