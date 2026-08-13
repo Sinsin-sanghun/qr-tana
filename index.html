@@ -736,6 +736,76 @@ function logItem(){
       ${rows}
     </table></div>`;
 }
+let SITEQ='',OPENSITE=-1,SITEARR=[];
+function flowChartSvg(){
+  const map={};
+  TX.forEach(t=>{const m=(t.tx_date||(t.created_at||'').slice(0,10)).slice(0,7);
+    map[m]=map[m]||{i:0,o:0,all:0};
+    if(t.kind==='in')map[m].i+=Number(t.qty);
+    else if(t.kind==='out')map[m].o+=-Number(t.qty);
+    map[m].all+=Number(t.qty);});
+  const keys=[];const d=new Date();
+  for(let k=5;k>=0;k--){const dd=new Date(d.getFullYear(),d.getMonth()-k,1);
+    keys.push(dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0'));}
+  let cum=0;
+  Object.entries(map).forEach(([m,v])=>{if(m<keys[0])cum+=v.all;});
+  const series=keys.map(k=>{cum+=(map[k]?.all||0);return {m:k,i:map[k]?.i||0,o:map[k]?.o||0,stock:cum};});
+  const maxBar=Math.max(1,...series.map(s=>Math.max(s.i,s.o)));
+  const maxLine=Math.max(1,...series.map(s=>s.stock));
+  const W=640,Hh=250,base=195,chartH=130;
+  const gw=W/series.length;
+  let bars='',line='',dots='',labels='';
+  series.forEach((s,idx)=>{
+    const cx=idx*gw+gw/2;
+    const hI=s.i/maxBar*chartH, hO=s.o/maxBar*chartH;
+    bars+=`<rect x="${cx-27}" y="${base-Math.max(hI,2)}" width="23" height="${Math.max(hI,2)}" fill="#2f855a" rx="3" opacity="${s.i?1:.25}"/>`;
+    bars+=`<rect x="${cx+4}" y="${base-Math.max(hO,2)}" width="23" height="${Math.max(hO,2)}" fill="#2b6cb0" rx="3" opacity="${s.o?1:.25}"/>`;
+    if(s.i)labels+=`<text x="${cx-15}" y="${base-hI-6}" text-anchor="middle" font-size="11" fill="#2f855a" font-weight="700">${s.i}</text>`;
+    if(s.o)labels+=`<text x="${cx+16}" y="${base-hO-6}" text-anchor="middle" font-size="11" fill="#2b6cb0" font-weight="700">${s.o}</text>`;
+    const ly=base-18-(s.stock/maxLine*(chartH-10));
+    line+=(idx?'L':'M')+cx+' '+ly+' ';
+    dots+=`<circle cx="${cx}" cy="${ly}" r="4.5" fill="#16324f"/><text x="${cx}" y="${ly-10}" text-anchor="middle" font-size="11.5" fill="#16324f" font-weight="800">${s.stock}</text>`;
+    labels+=`<text x="${cx}" y="${base+20}" text-anchor="middle" font-size="11.5" fill="#64748b">${s.m.slice(2).replace('-','/')}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${Hh}" style="width:100%;height:auto;min-width:480px">
+    <line x1="0" y1="${base}" x2="${W}" y2="${base}" stroke="#c9d8e6" stroke-width="1.5"/>
+    ${bars}
+    <path d="${line}" fill="none" stroke="#16324f" stroke-width="2.5"/>
+    ${dots}${labels}
+    <g font-size="11.5">
+      <rect x="10" y="8" width="12" height="12" fill="#2f855a" rx="2"/><text x="26" y="19" fill="#475569">入庫</text>
+      <rect x="66" y="8" width="12" height="12" fill="#2b6cb0" rx="2"/><text x="82" y="19" fill="#475569">出庫</text>
+      <line x1="122" y1="14" x2="146" y2="14" stroke="#16324f" stroke-width="2.5"/><circle cx="134" cy="14" r="4" fill="#16324f"/><text x="152" y="19" fill="#475569">在庫合計（月末）</text>
+    </g></svg>`;
+}
+function siteData(){
+  const map={};
+  TX.forEach(t=>{if(t.kind!=='out')return;const s=t.site||'（未記入）';
+    map[s]=map[s]||{q:0,n:0,items:{},first:null,last:null};
+    const e=map[s];e.q+=-Number(t.qty);e.n++;
+    const dd=t.tx_date||(t.created_at||'').slice(0,10);
+    if(!e.first||dd<e.first)e.first=dd; if(!e.last||dd>e.last)e.last=dd;
+    const it=itemById(t.item_id);
+    const nm=(it?.name||'?')+'|'+(it?.unit||'');
+    e.items[nm]=(e.items[nm]||0)+(-Number(t.qty));});
+  return map;
+}
+window.siteRowsAn=function(){
+  const map=siteData();
+  SITEARR=Object.entries(map).filter(([s])=>!SITEQ||s.toLowerCase().includes(SITEQ.toLowerCase())).sort((a,b)=>b[1].q-a[1].q);
+  const mx=SITEARR[0]?.[1].q||1;
+  return SITEARR.map(([s,v],i)=>{
+    const open=OPENSITE===i;
+    const det=Object.entries(v.items).sort((a,b)=>b[1]-a[1]).map(([nm,q])=>{
+      const p=nm.split('|');
+      return `<div class="hist"><span style="float:right;font-weight:800;color:var(--navy)">${q} ${esc(p[1])}</span>${esc(p[0])}</div>`;}).join('');
+    return `<div class="card" style="cursor:pointer" onmouseenter="if(OPENSITE!==${i}){OPENSITE=${i};$('siteAn').innerHTML=siteRowsAn();}" onclick="OPENSITE=OPENSITE===${i}?-1:${i};$('siteAn').innerHTML=siteRowsAn();event.stopPropagation();">
+      <div class="barrow" style="margin:0"><div class="bl" style="font-weight:700">${esc(s)}</div><div class="bar" style="width:${Math.max(4,v.q/mx*40)}%;background:var(--green)"></div><div class="bv">${v.q}点</div><span style="color:var(--gray);font-size:.72rem">${open?'▲':'▼'}</span></div>
+      ${open?`<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:6px">
+        <div class="imeta" style="margin-bottom:4px">出庫 ${v.n}回 ・ 期間 ${esc(v.first||'')} 〜 ${esc(v.last||'')}</div>${det}</div>`:''}
+    </div>`;
+  }).join('')||'<div class="empty">該当する案件がありません</div>';
+};
 function logFlow(){
   const now=Date.now();
   function agg(days){
@@ -775,13 +845,18 @@ function logFlow(){
         <span class="chip cg">90日 入庫 +${a90.inQ}点（${a90.inN}件）</span>
         <span class="chip cr">90日 出庫 −${a90.outQ}点（${a90.outN}件）</span>
       </div></div>
+    <h2>月別グラフ（棒＝入庫・出庫 ／ 折れ線＝在庫合計）</h2>
+    <div class="card" style="overflow-x:auto">${flowChartSvg()}</div>
     <h2>月別の入出庫（直近6ヶ月）</h2>
     <div class="twrap"><table class="lt" style="min-width:340px">
       <tr><th>月</th><th class="r">入庫</th><th class="r">出庫</th><th class="r">増減</th></tr>
       ${mRows||'<tr><td colspan="4" style="text-align:center;color:var(--gray)">記録なし</td></tr>'}
     </table></div>
     <h2>よく出る資材 TOP5（直近90日）</h2><div class="card">${topBars(outByItem,'var(--blue)')}</div>
-    <h2>案件別出庫 TOP5（直近90日）</h2><div class="card">${topBars(outBySite,'var(--green)')}</div>`;
+    <h2>案件別の出庫（全期間）</h2>
+    <input value="${esc(SITEQ)}" placeholder="🔍 案件名で検索…" oninput="SITEQ=this.value;OPENSITE=-1;$('siteAn').innerHTML=siteRowsAn()" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;margin-bottom:10px">
+    <div class="cap" style="margin:-4px 0 8px">PC: マウスを乗せると資材内訳を表示 ／ スマホ: タップで開閉</div>
+    <div id="siteAn">${siteRowsAn()}</div>`;
 }
 
 /* ---------- 出荷リスト ---------- */
