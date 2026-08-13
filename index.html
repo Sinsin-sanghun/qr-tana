@@ -66,6 +66,18 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 .empty{text-align:center;color:var(--gray);font-size:.85rem;padding:26px 0}
 .loading{text-align:center;color:var(--gray);padding:40px 0}
 .shipbtn{width:100%;background:var(--navy);color:#fff;padding:13px;font-size:.95rem;border-radius:12px;margin:4px 0 10px}
+.tabbar{display:flex;gap:8px;margin-bottom:12px}
+.tab{flex:1;padding:9px 0;border-radius:10px;background:#fff;border:1.5px solid var(--line);color:#475569;font-size:.83rem;font-weight:700}
+.tab.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.twrap{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:10px}
+.lt{width:100%;border-collapse:collapse;font-size:.78rem;min-width:560px}
+.lt th{background:var(--sky);color:var(--navy);padding:7px 9px;border-bottom:1.5px solid var(--line);white-space:nowrap;text-align:left}
+.lt td{padding:6px 9px;border-bottom:1px solid #eef3f8;white-space:nowrap}
+.lt .r{text-align:right}
+.barrow{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:.8rem}
+.barrow .bl{width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+.barrow .bar{height:15px;background:var(--blue);border-radius:4px;min-width:3px}
+.barrow .bv{font-weight:700;color:var(--navy);flex-shrink:0}
 .sdoc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:26px 24px;margin-bottom:14px}
 .sdoc h1{font-size:1.25rem;color:#111;border-bottom:3px solid #16324f;padding-bottom:8px;margin-bottom:4px}
 .sdoc .smeta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:.95rem;margin:10px 0 14px}
@@ -108,7 +120,7 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center">
     <div><div class="t" id="hTitle">📦 QR棚管理</div><div class="s" id="hSub">しろくま電力 購買部 ・ 野田倉庫</div></div>
-    <div style="text-align:right"><a href="#ships">🚚 出荷</a>　<a href="#approvals" id="hAppr">✅ 承認</a>　<a href="#" id="hHome">🏠 全体</a></div>
+    <div style="text-align:right"><a href="#log">📊 記録</a>　<a href="#ships">🚚 出荷</a>　<a href="#approvals" id="hAppr">✅ 承認</a>　<a href="#" id="hHome">🏠 全体</a></div>
   </div>
 </header>
 <div class="wrap" id="app"><div class="loading">読み込み中…</div></div>
@@ -199,6 +211,7 @@ function render(){
   if(h==='approvals'){renderApprovals();window.scrollTo(0,0);return;}
   if(h==='newship'){renderNewShip();window.scrollTo(0,0);return;}
   if(h==='ships'){renderShips();window.scrollTo(0,0);return;}
+  if(h==='log'){renderLog();window.scrollTo(0,0);return;}
   if(h.startsWith('S-')){
     const sp=SHIPS.find(x=>x.id===+h.slice(2));
     if(sp){renderShip(sp);window.scrollTo(0,0);return;}
@@ -629,6 +642,147 @@ $('phFile').addEventListener('change',async e=>{
   }catch(err){toast('写真の登録に失敗しました');console.error(err);}
   finally{PH_TARGET=null;}
 });
+
+/* ---------- 記録・分析 ---------- */
+let LOGTAB='ledger',LOGKIND='all',LOGITEM=null,LOGQ='';
+function kindJ(k){return k==='out'?'出庫':k==='in'?'入庫':k==='init'?'初期登録':'調整';}
+function txSorted(){return TX.slice().sort((a,b)=>txTime(b)-txTime(a)||b.id-a.id);}
+window.setLogTab=function(t){LOGTAB=t;renderLog();};
+function renderLog(){
+  $('hTitle').textContent='📊 記録・分析';
+  const tabs=`<div class="tabbar">
+    <button class="tab ${LOGTAB==='ledger'?'on':''}" onclick="setLogTab('ledger')">📒 記録一覧</button>
+    <button class="tab ${LOGTAB==='item'?'on':''}" onclick="setLogTab('item')">🔍 資材分析</button>
+    <button class="tab ${LOGTAB==='flow'?'on':''}" onclick="setLogTab('flow')">📈 全体の流れ</button>
+  </div>`;
+  $('app').innerHTML=tabs+(LOGTAB==='ledger'?logLedger():LOGTAB==='item'?logItem():logFlow());
+}
+function logLedger(){
+  const kinds=[['all','すべて'],['in','入庫'],['out','出庫'],['adjust','調整'],['init','初期']];
+  const chips=kinds.map(([k,l])=>`<span class="chip ${LOGKIND===k?'cr':'cn'}" style="cursor:pointer" onclick="LOGKIND='${k}';renderLog()">${l}</span>`).join('');
+  const list=txSorted().filter(t=>LOGKIND==='all'||t.kind===LOGKIND).slice(0,300);
+  const rows=list.map(t=>{const it=itemById(t.item_id);
+    return `<tr><td>${esc(t.tx_date||(t.created_at||'').slice(0,10))}</td>
+      <td><b class="${t.kind==='out'?'out':t.kind==='in'?'in':'adj'}" style="color:${t.kind==='out'?'var(--blue)':t.kind==='in'?'var(--green)':'var(--amber)'}">${kindJ(t.kind)}</b></td>
+      <td style="white-space:normal;min-width:160px">${esc(it?.name||'')}</td>
+      <td class="r"><b>${Number(t.qty)>0?'+':''}${t.qty}</b> ${esc(it?.unit||'')}</td>
+      <td>${esc(t.shelf_code)}</td>
+      <td>${esc(t.site||'')}</td>
+      <td>${esc(t.created_by||'')}</td></tr>`;
+  }).join('');
+  return `<div class="chips">${chips}</div>
+    <div class="twrap"><table class="lt">
+      <tr><th>日付</th><th>種別</th><th>資材</th><th class="r">数量</th><th>棚</th><th>案件・仕入先</th><th>担当</th></tr>
+      ${rows||'<tr><td colspan="7" style="text-align:center;color:var(--gray)">記録がありません</td></tr>'}
+    </table></div>
+    <div class="cap">最新300件を表示（全記録はCSVで）</div>
+    <button class="shipbtn" onclick="dlCSV()">⬇ 全記録をCSVダウンロード（Excelで開けます）</button>`;
+}
+window.dlCSV=function(){
+  const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
+  const head='日付,種別,資材コード,品名,数量,単位,棚,案件・仕入先,担当,リストNo,登録日時\n';
+  const lines=txSorted().map(t=>{const it=itemById(t.item_id);
+    return [t.tx_date||(t.created_at||'').slice(0,10),kindJ(t.kind),it?.item_code||'',q(it?.name||''),t.qty,it?.unit||'',t.shelf_code,q(t.site||''),q(t.created_by||''),t.shipment_id?'S-'+t.shipment_id:'',(t.created_at||'').slice(0,16).replace('T',' ')].join(',');
+  });
+  const blob=new Blob(['﻿'+head+lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='在庫記録_'+todayStr()+'.csv';a.click();
+  toast('CSVをダウンロードしました');
+};
+window.setLogItem=function(id){LOGITEM=id;renderLog();};
+window.logItemMatches=function(){
+  const q=LOGQ.toLowerCase();
+  const hits=ITEMS.filter(i=>q&&(i.name+' '+(i.model||'')+' '+(i.item_code||'')).toLowerCase().includes(q)).slice(0,30);
+  return hits.map(i=>{const p=photosFor(i.id)[0];
+    return `<div class="pk" onclick="setLogItem(${i.id})">${p?`<img class="pkt" src="${esc(p.url)}" loading="lazy">`:'<div class="pkt-e"></div>'}<div style="flex:1"><b>${esc(i.name)}</b><div class="m">${esc(i.item_code||'')} ${esc(i.model||'')}</div></div></div>`;
+  }).join('')||(q?'<div class="pk">該当なし</div>':'<div class="pk" style="color:var(--gray)">上の検索欄に品名・型番・コードを入力してください</div>');
+};
+function logItem(){
+  if(!LOGITEM){
+    return `<div class="card"><label style="font-size:.78rem;color:var(--gray)">資材を検索して増減・行き先を分析</label>
+      <input value="${esc(LOGQ)}" placeholder="🔍 品名・型番・コード" oninput="LOGQ=this.value;$('liList').innerHTML=logItemMatches()" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;margin-top:6px">
+      <div class="pick" id="liList" style="max-height:none">${logItemMatches()}</div></div>`;
+  }
+  const it=itemById(LOGITEM); if(!it){LOGITEM=null;return logItem();}
+  const txs=txSorted().filter(t=>t.item_id===it.id);
+  let tin=0,tout=0,tadj=0,cur=0;
+  txs.forEach(t=>{const v=Number(t.qty);cur+=v;
+    if(t.kind==='in')tin+=v; else if(t.kind==='out')tout+=-v; else tadj+=v;});
+  const bySite={};
+  txs.filter(t=>t.kind==='out').forEach(t=>{const s=t.site||'（案件未記入）';
+    bySite[s]=bySite[s]||{n:0,q:0};bySite[s].n++;bySite[s].q+=-Number(t.qty);});
+  const siteRows=Object.entries(bySite).sort((a,b)=>b[1].q-a[1].q).map(([s,v])=>
+    `<tr><td style="white-space:normal">${esc(s)}</td><td class="r">${v.n}回</td><td class="r"><b>${v.q}</b> ${esc(it.unit||'')}</td></tr>`).join('');
+  const rows=txs.map(t=>`<tr><td>${esc(t.tx_date||(t.created_at||'').slice(0,10))}</td>
+      <td><b style="color:${t.kind==='out'?'var(--blue)':t.kind==='in'?'var(--green)':'var(--amber)'}">${kindJ(t.kind)}</b></td>
+      <td class="r"><b>${Number(t.qty)>0?'+':''}${t.qty}</b></td>
+      <td>${esc(t.shelf_code)}</td><td>${esc(t.site||'')}</td><td>${esc(t.created_by||'')}</td></tr>`).join('');
+  return `<button class="mcancel noprint" style="padding:9px 20px;margin-bottom:10px" onclick="setLogItem(null)">← 別の資材を検索</button>
+    <div class="card"><div class="iname" style="font-size:1rem">${esc(it.name)}</div>
+      <div class="imeta">${esc(it.model||'')} [${esc(it.item_code||'')}]</div>
+      <div class="chips" style="margin-top:10px">
+        <span class="chip cn">現在庫 <b>${cur}</b>${esc(it.unit||'')}</span>
+        <span class="chip cg">累計入庫 +${tin}</span>
+        <span class="chip cr">累計出庫 −${tout}</span>
+        <span class="chip ca">初期・調整 ${tadj>=0?'+':''}${tadj}</span>
+      </div></div>
+    <h2>案件別の出庫先（どこにどれだけ出たか）</h2>
+    <div class="twrap"><table class="lt" style="min-width:340px">
+      <tr><th>案件・行き先</th><th class="r">回数</th><th class="r">数量</th></tr>
+      ${siteRows||'<tr><td colspan="3" style="text-align:center;color:var(--gray)">出庫記録なし</td></tr>'}
+    </table></div>
+    <h2>件別の全記録（${txs.length}件）</h2>
+    <div class="twrap"><table class="lt" style="min-width:480px">
+      <tr><th>日付</th><th>種別</th><th class="r">数量</th><th>棚</th><th>案件・仕入先</th><th>担当</th></tr>
+      ${rows}
+    </table></div>`;
+}
+function logFlow(){
+  const now=Date.now();
+  function agg(days){
+    let inQ=0,inN=0,outQ=0,outN=0;
+    TX.forEach(t=>{if(now-txTime(t)>days*864e5)return;
+      if(t.kind==='in'){inQ+=Number(t.qty);inN++;}
+      else if(t.kind==='out'){outQ+=-Number(t.qty);outN++;}});
+    return {inQ,inN,outQ,outN};
+  }
+  const a30=agg(30),a90=agg(90);
+  const months={};
+  TX.forEach(t=>{const d=t.tx_date||(t.created_at||'').slice(0,10);const m=d.slice(0,7);
+    months[m]=months[m]||{i:0,o:0};
+    if(t.kind==='in')months[m].i+=Number(t.qty);
+    else if(t.kind==='out')months[m].o+=-Number(t.qty);});
+  const mRows=Object.entries(months).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,6).map(([m,v])=>
+    `<tr><td>${m}</td><td class="r" style="color:var(--green)">+${v.i}</td><td class="r" style="color:var(--blue)">−${v.o}</td><td class="r"><b>${v.i-v.o>=0?'+':''}${v.i-v.o}</b></td></tr>`).join('');
+  function topBars(map,color){
+    const arr=Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const mx=arr[0]?.[1]||1;
+    return arr.map(([l,v])=>`<div class="barrow"><div class="bl">${esc(l)}</div><div class="bar" style="width:${Math.max(4,v/mx*55)}%;background:${color}"></div><div class="bv">${v}</div></div>`).join('')||'<div class="empty">データなし</div>';
+  }
+  const outByItem={},outBySite={};
+  TX.forEach(t=>{if(t.kind!=='out'||now-txTime(t)>90*864e5)return;
+    const it=itemById(t.item_id);
+    const nm=(it?.name||'').slice(0,16);
+    outByItem[nm]=(outByItem[nm]||0)+(-Number(t.qty));
+    const s=(t.site||'（未記入）').slice(0,16);
+    outBySite[s]=(outBySite[s]||0)+(-Number(t.qty));});
+  return `
+    <div class="card"><h2 style="margin-top:0">直近の動き</h2>
+      <div class="chips">
+        <span class="chip cg">30日 入庫 +${a30.inQ}点（${a30.inN}件）</span>
+        <span class="chip cr">30日 出庫 −${a30.outQ}点（${a30.outN}件）</span>
+      </div>
+      <div class="chips">
+        <span class="chip cg">90日 入庫 +${a90.inQ}点（${a90.inN}件）</span>
+        <span class="chip cr">90日 出庫 −${a90.outQ}点（${a90.outN}件）</span>
+      </div></div>
+    <h2>月別の入出庫（直近6ヶ月）</h2>
+    <div class="twrap"><table class="lt" style="min-width:340px">
+      <tr><th>月</th><th class="r">入庫</th><th class="r">出庫</th><th class="r">増減</th></tr>
+      ${mRows||'<tr><td colspan="4" style="text-align:center;color:var(--gray)">記録なし</td></tr>'}
+    </table></div>
+    <h2>よく出る資材 TOP5（直近90日）</h2><div class="card">${topBars(outByItem,'var(--blue)')}</div>
+    <h2>案件別出庫 TOP5（直近90日）</h2><div class="card">${topBars(outBySite,'var(--green)')}</div>`;
+}
 
 /* ---------- 出荷リスト ---------- */
 let NEWSHIP=null;
