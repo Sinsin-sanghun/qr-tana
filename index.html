@@ -163,7 +163,7 @@ const URL0='https://ndbqaphghlfcsfkfwbnn.supabase.co/rest/v1/';
 const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kYnFhcGhnaGxmY3Nma2Z3Ym5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NTExNTIsImV4cCI6MjA5NDMyNzE1Mn0.F_iAEpv8yz7Cyy6ra6svJa8GdZnoyguayxAsFSuEcrY';
 const H={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
 const sb=window.supabase.createClient('https://ndbqaphghlfcsfkfwbnn.supabase.co',KEY);
-let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],SHIPS=[],PINHASH='';
+let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],SHIPS=[],RECIPS=[],PINHASH='';
 let SESSION=null,ME='',MENAME='',ISADMIN=false,READY=false;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -175,7 +175,7 @@ async function api(path,opt){
 }
 async function loadAll(){
   let ST;
-  [SHELVES,ITEMS,TX,REQS,PHOTOS,ARS,SHIPS,ST]=await Promise.all([
+  [SHELVES,ITEMS,TX,REQS,PHOTOS,ARS,SHIPS,RECIPS,ST]=await Promise.all([
     api('qr_shelves?select=*&order=sort'),
     api('qr_items?select=*&order=item_code&limit=5000'),
     api('qr_transactions?select=*&order=created_at.desc&limit=10000'),
@@ -183,6 +183,7 @@ async function loadAll(){
     api('qr_item_photos?select=*&order=sort,id&limit=10000'),
     ISADMIN?api('qr_access_requests?select=*&order=created_at.desc&limit=100'):Promise.resolve([]),
     api('qr_shipments?select=*&order=ship_date.desc,id.desc&limit=500'),
+    api('qr_recipients?select=*&active=eq.true&order=sort,id&limit=300'),
     api('qr_settings?key=eq.approval_pin_hash&select=value')
   ]);
   PINHASH=ST?.[0]?.value||'';
@@ -973,7 +974,7 @@ function siteList(){
   return [...s].slice(0,20);
 }
 function renderNewShip(){
-  if(!NEWSHIP)NEWSHIP={date:todayStr(),site:'',lines:[]};
+  if(!NEWSHIP)NEWSHIP={date:todayStr(),site:'',rname:'',rtel:'',rfree:false,lines:[]};
   $('hTitle').textContent='🚚 出荷リスト作成';
   const lines=NEWSHIP.lines.map((l,i)=>{
     const it=itemById(l.item_id);
@@ -990,6 +991,15 @@ function renderNewShip(){
       <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">案件・行き先（必須）</label>
       <input id="shSite" list="siteDL" value="${esc(NEWSHIP.site)}" placeholder="例: 石山案件" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="NEWSHIP.site=this.value">
       <datalist id="siteDL">${siteList().map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">現場担当者（受取人）</label>
+      <select id="shRecip" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;background:#fff" onchange="shipRecipSel(this.value)">
+        <option value="">選択してください</option>
+        ${RECIPS.map(r=>`<option value="${esc(r.name)}"${!NEWSHIP.rfree&&NEWSHIP.rname===r.name?' selected':''}>${esc(r.name)}</option>`).join('')}
+        <option value="__free"${NEWSHIP.rfree?' selected':''}>リストにない人（直接入力）</option>
+      </select>
+      ${NEWSHIP.rfree?`<input id="shRName" value="${esc(NEWSHIP.rname)}" placeholder="担当者名を入力" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;margin-top:8px" oninput="NEWSHIP.rname=this.value">`:''}
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">担当者 携帯番号（名前を選ぶと自動入力）</label>
+      <input id="shRTel" value="${esc(NEWSHIP.rtel)}" placeholder="例: 090-0000-0000" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="NEWSHIP.rtel=this.value">
     </div>
     <h2>送る資材（${NEWSHIP.lines.length}件）</h2>
     ${lines||'<div class="empty">まだ資材がありません。下のボタンで追加してください。</div>'}
@@ -1045,13 +1055,20 @@ window.shipAddLine=function(iid,shelf){
   NEWSHIP.lines.push({item_id:iid,shelf,qty:q});
   closeMd();renderNewShip();toast('追加しました');
 };
+window.shipRecipSel=function(v){
+  if(v==='__free'){NEWSHIP.rfree=true;NEWSHIP.rname='';NEWSHIP.rtel='';}
+  else{NEWSHIP.rfree=false;NEWSHIP.rname=v;const r=RECIPS.find(x=>x.name===v);NEWSHIP.rtel=r?.tel||'';}
+  renderNewShip();
+};
 window.submitShip=async function(){
   if(!NEWSHIP.site.trim()){toast('案件・行き先を入力してください');return;}
   if(!NEWSHIP.lines.length){toast('資材を追加してください');return;}
-  if(!confirm(`${NEWSHIP.date}（${wdayOf(NEWSHIP.date)}） ${NEWSHIP.site}\n${NEWSHIP.lines.length}件の資材を出庫してリストを発行します。よろしいですか？`))return;
+  const rInfo=NEWSHIP.rname.trim()?`\n現場担当: ${NEWSHIP.rname.trim()}${NEWSHIP.rtel.trim()?`（${NEWSHIP.rtel.trim()}）`:''}`:'';
+  if(!confirm(`${NEWSHIP.date}（${wdayOf(NEWSHIP.date)}） ${NEWSHIP.site}${rInfo}\n${NEWSHIP.lines.length}件の資材を出庫してリストを発行します。よろしいですか？`))return;
   try{
     const sp=await api('qr_shipments?select=id',{method:'POST',headers:Object.assign({},H,{'Prefer':'return=representation'}),
-      body:JSON.stringify({ship_date:NEWSHIP.date,site:NEWSHIP.site.trim(),created_by:localStorage.getItem('qr_who')||MENAME})});
+      body:JSON.stringify({ship_date:NEWSHIP.date,site:NEWSHIP.site.trim(),created_by:localStorage.getItem('qr_who')||MENAME,
+        recipient_name:NEWSHIP.rname.trim()||null,recipient_tel:NEWSHIP.rtel.trim()||null})});
     const sid=sp[0].id;
     await api('qr_transactions',{method:'POST',body:JSON.stringify(NEWSHIP.lines.map(l=>({
       shelf_code:l.shelf,item_id:l.item_id,qty:-l.qty,kind:'out',site:NEWSHIP.site.trim(),
@@ -1063,7 +1080,7 @@ window.submitShip=async function(){
 let SHIPQ='';
 function shipRowsHtml(){
   const q=SHIPQ.toLowerCase();
-  const list=SHIPS.filter(sp=>!q||(sp.site||'').toLowerCase().includes(q)||(sp.ship_date||'').includes(q));
+  const list=SHIPS.filter(sp=>!q||(sp.site||'').toLowerCase().includes(q)||(sp.ship_date||'').includes(q)||(sp.recipient_name||'').toLowerCase().includes(q));
   return list.map(sp=>{
     const txs=TX.filter(t=>t.shipment_id===sp.id);
     const agg={}; txs.forEach(t=>{agg[t.item_id]=(agg[t.item_id]||0)+(-Number(t.qty));});
@@ -1074,7 +1091,7 @@ function shipRowsHtml(){
       <div class="itemrow"><div style="flex:1">
         <div class="iname">📄 ${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）　${esc(sp.site)}</div>
         <div class="imeta">${items.length}品目・計${totalQ}点 ${summary?'｜ '+summary+(items.length>3?' …':''):''}</div>
-        <div class="imeta">担当 ${esc(sp.created_by||'—')} ・ リストNo. S-${sp.id}</div>
+        <div class="imeta">担当 ${esc(sp.created_by||'—')}${sp.recipient_name?' ・ 現場 '+esc(sp.recipient_name):''} ・ リストNo. S-${sp.id}</div>
       </div><span class="badge bn">開く ›</span></div></div>`;
   }).join('')||'<div class="empty">該当する出荷履歴がありません</div>';
 }
@@ -1114,6 +1131,7 @@ function renderShip(sp){
       <div class="smeta">
         <div>📅 出荷日: <b>${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）</b></div>
         <div>📍 案件: <b>${esc(sp.site)}</b></div>
+        ${sp.recipient_name?`<div>👤 現場担当: <b>${esc(sp.recipient_name)}</b>${sp.recipient_tel?`（📞 ${esc(sp.recipient_tel)}）`:''}</div>`:''}
         <div>担当: ${esc(sp.created_by||'')}</div>
       </div>
       <table>
