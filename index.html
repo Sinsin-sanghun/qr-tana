@@ -732,10 +732,11 @@ function logLedger(){
     <div class="card" style="padding:10px 14px">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.82rem">
         <span style="color:var(--gray)">📅 期間:</span>
-        <input type="date" value="${esc(LOGD1)}" onchange="LOGD1=this.value;renderLog()" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-size:.9rem">
+        <input type="date" id="ld1" value="${esc(LOGD1)}" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-size:.9rem">
         <span>〜</span>
-        <input type="date" value="${esc(LOGD2)}" onchange="LOGD2=this.value;renderLog()" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-size:.9rem">
-        ${(LOGD1||LOGD2)?`<button class="bset" style="padding:7px 14px" onclick="LOGD1='';LOGD2='';renderLog()">✖ クリア</button>`:''}
+        <input type="date" id="ld2" value="${esc(LOGD2)}" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-size:.9rem">
+        <button class="mok" style="flex:none;padding:8px 20px;font-size:.88rem" onclick="LOGD1=$('ld1').value;LOGD2=$('ld2').value;renderLog()">🔍 検索</button>
+        ${(LOGD1||LOGD2)?`<button class="bset" style="padding:8px 14px" onclick="LOGD1='';LOGD2='';renderLog()">✖ クリア</button>`:''}
         <span style="color:var(--navy);font-weight:700;margin-left:auto">${filtered.length}件</span>
       </div></div>
     <div class="twrap"><table class="lt">
