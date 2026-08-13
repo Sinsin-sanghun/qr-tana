@@ -651,7 +651,11 @@ $('phFile').addEventListener('change',async e=>{
 let LOGTAB='ledger',LOGKIND='all',LOGITEM=null,LOGQ='';
 function kindJ(k){return k==='out'?'出庫':k==='in'?'入庫':k==='init'?'初期登録':'調整';}
 function txSorted(){return TX.slice().sort((a,b)=>txTime(b)-txTime(a)||b.id-a.id);}
-window.setLogTab=function(t){LOGTAB=t;renderLog();};
+window.setLogTab=function(t){
+  LOGTAB=t;
+  LOGQ='';LOGITEM=null;LOGKIND='all';SITEQ='';OPENSITE=-1; // 탭 클릭 시 검색·필터 초기화
+  renderLog();
+};
 function renderLog(){
   $('hTitle').textContent='📊 記録・分析';
   const tabs=`<div class="tabbar">
