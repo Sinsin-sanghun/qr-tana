@@ -1006,14 +1006,10 @@ function renderNewShip(){
       <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">案件・行き先（必須）</label>
       <input id="shSite" list="siteDL" value="${esc(NEWSHIP.site)}" placeholder="例: 石山案件" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="NEWSHIP.site=this.value">
       <datalist id="siteDL">${siteList().map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
-      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">現場担当者（受取人）</label>
-      <select id="shRecip" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;background:#fff" onchange="shipRecipSel(this.value)">
-        <option value="">選択してください</option>
-        ${RECIPS.map(r=>`<option value="${esc(r.name)}"${!NEWSHIP.rfree&&NEWSHIP.rname===r.name?' selected':''}>${esc(r.name)}</option>`).join('')}
-        <option value="__free"${NEWSHIP.rfree?' selected':''}>リストにない人（直接入力）</option>
-      </select>
-      ${NEWSHIP.rfree?`<input id="shRName" value="${esc(NEWSHIP.rname)}" placeholder="担当者名を入力" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;margin-top:8px" oninput="NEWSHIP.rname=this.value">`:''}
-      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">担当者 携帯番号（名前を選ぶと自動入力）</label>
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">現場担当者（受取人）— 入力すると候補が出ます。リストにない人はそのまま入力OK</label>
+      <input id="shRecip" list="recipDL" value="${esc(NEWSHIP.rname)}" placeholder="例: 染谷（入力または選択）" autocomplete="off" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="shipRecipInput(this.value)">
+      <datalist id="recipDL">${RECIPS.map(r=>`<option value="${esc(r.name)}">`).join('')}</datalist>
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">担当者 携帯番号（リストの名前を選ぶと自動入力）</label>
       <input id="shRTel" value="${esc(NEWSHIP.rtel)}" placeholder="例: 090-0000-0000" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="NEWSHIP.rtel=this.value">
     </div>
     <h2>送る資材（${NEWSHIP.lines.length}件）</h2>
@@ -1070,10 +1066,13 @@ window.shipAddLine=function(iid,shelf){
   NEWSHIP.lines.push({item_id:iid,shelf,qty:q});
   closeMd();renderNewShip();toast('追加しました');
 };
-window.shipRecipSel=function(v){
-  if(v==='__free'){NEWSHIP.rfree=true;NEWSHIP.rname='';NEWSHIP.rtel='';}
-  else{NEWSHIP.rfree=false;NEWSHIP.rname=v;const r=RECIPS.find(x=>x.name===v);NEWSHIP.rtel=r?.tel||'';}
-  renderNewShip();
+window.shipRecipInput=function(v){
+  NEWSHIP.rname=v;
+  const r=RECIPS.find(x=>x.name===v);
+  if(r){ // 리스트에서 선택(완전일치) → 전화번호 자동 입력
+    NEWSHIP.rtel=r.tel||'';
+    const tel=$('shRTel'); if(tel)tel.value=NEWSHIP.rtel;
+  }
 };
 window.submitShip=async function(){
   if(!NEWSHIP.site.trim()){toast('案件・行き先を入力してください');return;}
