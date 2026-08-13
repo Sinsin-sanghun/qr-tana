@@ -36,6 +36,17 @@ button{border:none;border-radius:9px;font-weight:700;cursor:pointer;font-family:
 .bset{background:#e2e8f0;color:#475569;padding:9px 12px;font-size:.8rem}
 .baddbig{width:100%;background:#fff;border:2px dashed var(--blue);color:var(--blue);padding:12px;font-size:.95rem;border-radius:12px;margin:4px 0 14px}
 .shelfgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.rackwrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px;margin-bottom:16px}
+.rackframe{border:7px solid #c0392b;border-radius:5px;overflow:hidden;box-shadow:0 3px 8px rgba(0,0,0,.09)}
+.rcell{display:block;text-decoration:none;color:inherit;padding:12px 8px 10px;text-align:center;min-height:66px;background:#f8fafc}
+.rcell.top{border-bottom:7px solid #c0392b}
+.rcell.has{background:linear-gradient(180deg,#fdf6ec 0%,#f1e0c2 100%)}
+.rcell:active{filter:brightness(.95)}
+.rcell .rc{font-weight:800;color:var(--navy);font-size:1.05rem}
+.rcell .rs{font-size:.74rem;margin-top:3px}
+.rackfeet{display:flex;justify-content:space-between;padding:0 3px}
+.rackfeet span{width:11px;height:9px;background:#c0392b;border-radius:0 0 2px 2px}
+.racklabel{text-align:center;font-size:.78rem;color:var(--gray);margin-top:6px;font-weight:700}
 .shelfcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;text-decoration:none;color:inherit;display:block}
 .shelfcard .c{font-size:1.15rem;font-weight:800;color:var(--navy)}
 .shelfcard .l{font-size:.7rem;color:var(--gray)}
@@ -271,13 +282,29 @@ function renderItem(it){
 function renderDash(){
   $('hTitle').textContent='📦 QR棚管理 — 全体';
   let nR=0,nA=0,nG=0;
-  const shelfHtml=SHELVES.map(s=>{
+  const stat={};
+  SHELVES.forEach(s=>{
     const st=stocksFor(s.code); let worst='',cnt=0;
     for(const[iid,q]of Object.entries(st)){ if(q<=0)continue; cnt++;
       const j=judge(q,out30(s.code,+iid),itemById(+iid)?.min_qty);
       if(j.k==='br'){worst='br';nR++;} else if(j.k==='ba'){if(worst!=='br')worst='ba';nA++;} else if(j.k==='bg'){nG++;if(!worst)worst='bg';}}
-    const mark=worst==='br'?'🚨':worst==='ba'?'⚠️':cnt?'✅':'—';
-    return `<a class="shelfcard" href="#${s.code}"><div class="c">${esc(s.code)}</div><div class="l">${esc(s.label)}</div><div class="n">${mark} ${cnt}品目</div></a>`;
+    stat[s.code]={cnt,worst};
+  });
+  const racks={};
+  SHELVES.forEach(s=>{const key=s.zone+'-'+s.rack;
+    racks[key]=racks[key]||{zone:s.zone,rack:s.rack,levels:{}};
+    racks[key].levels[s.level]=s;});
+  const shelfHtml=Object.values(racks).sort((a,b)=>String(a.zone).localeCompare(String(b.zone))||a.rack-b.rack).map(r=>{
+    const cells=Object.keys(r.levels).map(Number).sort((a,b)=>b-a).map(lv=>{
+      const s=r.levels[lv]; const st=stat[s.code]||{cnt:0,worst:''};
+      const mark=st.worst==='br'?'🚨':st.worst==='ba'?'⚠️':'✅';
+      return `<a class="rcell ${lv===Math.max(...Object.keys(r.levels).map(Number))?'top':''} ${st.cnt?'has':''}" href="#${s.code}">
+        <div class="rc">${esc(s.code)}</div>
+        <div class="rs">${st.cnt?`${mark} 📦 ${st.cnt}品目`:'<span style="color:#94a3b8">空き</span>'}</div></a>`;
+    }).join('');
+    return `<div><div class="rackframe">${cells}</div>
+      <div class="rackfeet"><span></span><span></span></div>
+      <div class="racklabel">ラック${r.rack}（${esc(r.zone)}エリア）</div></div>`;
   }).join('');
   const shortRows=[];
   for(const s of SHELVES){const st=stocksFor(s.code);
@@ -298,7 +325,7 @@ function renderDash(){
     <div class="chips"><span class="chip cr">🚨 不足 ${nR}</span><span class="chip ca">⚠️ 注意 ${nA}</span><span class="chip cg">✅ 十分 ${nG}</span><span class="chip cn">棚 ${SHELVES.length}</span><span class="chip cn" style="cursor:pointer" onclick="doLogout()">👤 ${esc(MENAME)}｜ログアウト</span></div>
     <button class="shipbtn" onclick="NEWSHIP=null;location.hash='newship'">🚚 出荷リストを作成（現場へ資材を送る）</button>
     ${SHIPS.length?`<h2>最近の出荷</h2><div class="card">${SHIPS.slice(0,5).map(sp=>`<div class="hist" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">📄 ${esc(sp.ship_date)} ${esc(sp.site)} <span style="color:var(--blue)">［リストを開く］</span></div>`).join('')}</div>`:''}
-    <h2>棚一覧（タップで棚ページへ）</h2><div class="shelfgrid">${shelfHtml}</div>
+    <h2>棚一覧（実際のラック配置 ・ 段をタップで棚ページへ）</h2><div class="rackwrap">${shelfHtml}</div>
     <h2>要対応（不足・注意）</h2>${shortHtml}
     <h2>最近の記録</h2><div class="card">${recent}</div>`;
 }
