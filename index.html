@@ -133,7 +133,10 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center">
     <div><div class="t" id="hTitle">📦 QR棚管理</div><div class="s" id="hSub">しろくま電力 購買部 ・ 野田倉庫</div></div>
-    <div style="text-align:right"><a href="#log">📊 記録</a>　<a href="#ships">🚚 出荷</a>　<a href="#approvals" id="hAppr">✅ 承認</a>　<a href="#" id="hHome">🏠 全体</a></div>
+    <div style="display:grid;grid-template-columns:auto auto;gap:6px 18px;justify-content:end;white-space:nowrap;flex-shrink:0">
+      <a href="#log">📊 記録</a><a href="#ships">🚚 出荷</a>
+      <a href="#approvals" id="hAppr">✅ 承認</a><a href="#" id="hHome">🏠 全体</a>
+    </div>
   </div>
 </header>
 <div class="wrap" id="app"><div class="loading">読み込み中…</div></div>
