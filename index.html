@@ -1427,7 +1427,7 @@ window.changePin=async function(){
 };
 
 /* ---------- 受領確認（現場サイン） ---------- */
-let RCPT={id:null,token:null,data:null,checks:{}};
+let RCPT={id:null,token:null,data:null,checks:{}},RCPTMODE=false;
 function receiptUrl(sp){return location.origin+location.pathname+'#R-'+sp.id+'-'+sp.receive_token;}
 function qrDataUrl(url,cell,margin){const q=qrcode(0,'M');q.addData(url);q.make();return q.createDataURL(cell||4,margin==null?2:margin);}
 function shipStatusBadge(sp){
@@ -1437,6 +1437,7 @@ function shipStatusBadge(sp){
 function fmtDT(s){if(!s)return '';const d=new Date(s);return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
 function parseReceiptHash(h){const m=h.match(/^R-(\d+)-([A-Za-z0-9]+)$/);return m?{id:+m[1],token:m[2]}:null;}
 async function renderReceipt(id,token){
+  RCPTMODE=true;
   const nav=$('hNav'); if(nav)nav.style.display='none';
   $('hTitle').textContent='📦 受領確認';
   $('hSub').textContent='しろくま電力 購買部';
@@ -1611,8 +1612,10 @@ window.addEventListener('hashchange',()=>{
   const h=decodeURIComponent(location.hash.replace('#',''));
   const p=parseReceiptHash(h);
   if(p&&!READY){renderReceipt(p.id,p.token);return;}
-  if(READY)render();
-  else if(!p)location.reload(); // 受領画面から他画面へ → 通常起動（ログイン）に戻す
+  if(READY){render();return;}
+  // 受領画面（RCPTMODE）から他画面へ移動した時だけ通常起動に戻す。
+  // ※ OAuthコールバックのハッシュ除去でここが発火してもリロードしない（ログインループ防止）
+  if(RCPTMODE&&!p)location.reload();
 });
 sb.auth.onAuthStateChange((ev,sess)=>{if(sess){H.Authorization='Bearer '+sess.access_token;}});
 (async()=>{
