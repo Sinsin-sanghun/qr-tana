@@ -106,6 +106,23 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
   .wrap{max-width:none;padding:0}
   .sdoc{border:none;border-radius:0;padding:6mm 4mm}
 }
+/* 受領確認 */
+.chkline{display:flex;align-items:center;gap:12px;padding:12px 10px;border-bottom:1px dashed var(--line);cursor:pointer;user-select:none}
+.chkline:last-child{border-bottom:none}
+.chkbox{width:30px;height:30px;border:2.5px solid #b9cbdc;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:1.15rem;color:#fff;background:#fff;transition:.15s}
+.chkline.on .chkbox{background:var(--green);border-color:var(--green)}
+.chkline .cn2{flex:1}
+.chkline .nm{font-weight:700;font-size:.92rem}
+.chkline .mt{font-size:.72rem;color:var(--gray)}
+.chkline .qy{font-size:1.35rem;font-weight:800;color:var(--navy);white-space:nowrap}
+.chkline .qy small{font-size:.68rem;font-weight:400;color:var(--gray)}
+.rqrbox{margin-top:16px;border:2.5px solid #16324f;border-radius:10px;padding:12px 14px;display:flex;gap:14px;align-items:center;page-break-inside:avoid}
+.rqrbox img{width:112px;height:112px;image-rendering:pixelated;flex-shrink:0}
+.rqrbox .tt{font-size:.95rem;font-weight:800;color:#111}
+.rqrbox .tx{font-size:.8rem;color:#334155;margin-top:4px;line-height:1.6}
+.rcptok{background:var(--greenbg);border:1.5px solid #bfe3cf;border-radius:14px;padding:26px 18px;text-align:center;margin-bottom:12px}
+.rcptok .big{font-size:3rem}
+.rcptok h2{justify-content:center;font-size:1.15rem;margin:8px 0 4px}
 .thumb{width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--line);flex-shrink:0}
 .thumb-e{width:56px;height:56px;border-radius:8px;border:1.5px dashed #b9cbdc;color:#b9cbdc;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0}
 .lb{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:120;touch-action:pan-y}
@@ -133,9 +150,10 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center">
     <div><div class="t" id="hTitle">📦 QR棚管理</div><div class="s" id="hSub">しろくま電力 購買部 ・ 野田倉庫</div></div>
-    <div style="display:grid;grid-template-columns:auto auto;gap:6px 18px;justify-content:end;white-space:nowrap;flex-shrink:0">
+    <div id="hNav" style="display:grid;grid-template-columns:auto auto;gap:6px 18px;justify-content:end;white-space:nowrap;flex-shrink:0">
       <a href="#log">📊 記録</a><a href="#ships">🚚 出荷</a>
       <a href="#approvals" id="hAppr">✅ 承認</a><a href="#" id="hHome">🏠 全体</a>
+      <a href="#settings" id="hSet" style="display:none">⚙ 設定</a>
     </div>
   </div>
 </header>
@@ -165,6 +183,10 @@ const H={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/
 const sb=window.supabase.createClient('https://ndbqaphghlfcsfkfwbnn.supabase.co',KEY);
 let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],SHIPS=[],RECIPS=[],PINHASH='';
 let SESSION=null,ME='',MENAME='',ISADMIN=false,READY=false;
+/* 機能権限（マスター設定タブで変更・qr_settings feature_perms に保存） */
+let PERMS={};
+const DEFPERM={ship_delete:'admin'}; // 未設定時の既定: 削除のみ管理者、他は全員
+function can(f){if(ISADMIN)return true;return (PERMS[f]||DEFPERM[f]||'all')==='all';}
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -184,9 +206,10 @@ async function loadAll(){
     ISADMIN?api('qr_access_requests?select=*&order=created_at.desc&limit=100'):Promise.resolve([]),
     api('qr_shipments?select=*&order=ship_date.desc,id.desc&limit=500'),
     api('qr_recipients?select=*&active=eq.true&order=sort,id&limit=300'),
-    api('qr_settings?key=eq.approval_pin_hash&select=value')
+    api('qr_settings?select=key,value')
   ]);
-  PINHASH=ST?.[0]?.value||'';
+  PINHASH=(ST||[]).find(x=>x.key==='approval_pin_hash')?.value||'';
+  try{PERMS=JSON.parse((ST||[]).find(x=>x.key==='feature_perms')?.value||'{}')||{};}catch(e){PERMS={};}
 }
 function pendingARs(){return (ARS||[]).filter(r=>r.status==='pending');}
 function photosFor(iid){return PHOTOS.filter(p=>p.item_id===iid);}
@@ -224,11 +247,16 @@ function siteTxt(t){return t.site?(t.kind==='in'?'仕入: ':'→ ')+esc(t.site):
 /* ---------- views ---------- */
 function render(){
   const tip=$('ctip'); if(tip)tip.style.display='none';
+  const nav=$('hNav'); if(nav)nav.style.display='';
+  const hs=$('hSet'); if(hs)hs.style.display=ISADMIN?'':'none';
   const n=pendingReqs().length+(ISADMIN?pendingARs().length:0);
   $('hAppr').textContent=n?`✅ 承認(${n})`:'✅ 承認';
   const h=decodeURIComponent(location.hash.replace('#',''));
+  const rp=parseReceiptHash(h);
+  if(rp){renderReceipt(rp.id,rp.token);return;}
+  if(h==='settings'){if(ISADMIN){renderSettings();window.scrollTo(0,0);}else{location.hash='';}return;}
   if(h==='approvals'){renderApprovals();window.scrollTo(0,0);return;}
-  if(h==='newship'){renderNewShip();window.scrollTo(0,0);return;}
+  if(h==='newship'){if(!can('ship_create')){toast('権限がありません');location.hash='';return;}renderNewShip();window.scrollTo(0,0);return;}
   if(h==='ships'){renderShips();window.scrollTo(0,0);return;}
   if(h==='log'){renderLog();window.scrollTo(0,0);return;}
   if(h.startsWith('S-')){
@@ -257,9 +285,9 @@ function renderItem(it){
       <div style="flex:1"><div class="iname">📍 ${esc(s.code)}</div><div class="imeta">${esc(s.label)}</div></div>
       <div><div class="iqty">${q}</div><div class="iunit">${esc(it.unit||'')}</div></div>
       <span class="badge ${j.k}">${j.t}</span></div>
-      <div class="btnrow">
+      ${can('stock_in')?`<div class="btnrow">
         <button class="bin" onclick="mvModal(${it.id},'${s.code}','in')">＋ 入庫</button>
-      </div></div>`;
+      </div>`:''}</div>`;
   }).join('');
   const hist=TX.filter(t=>t.item_id===it.id).slice(0,15).map(t=>{
     const cls=t.kind==='out'?'out':t.kind==='in'?'in':'adj';const sign=Number(t.qty)>0?'+':'';
@@ -274,9 +302,9 @@ function renderItem(it){
       </div>
       ${phHtml}
       <div class="btnrow">
-        <button class="bset" style="flex:1" onclick="minModal(${it.id})">⚙ 設定</button>
+        ${can('item_edit')?`<button class="bset" style="flex:1" onclick="minModal(${it.id})">⚙ 設定</button>`:''}
         <button class="bset" style="flex:1" onclick="showItemQR(${it.id})">📇 QR</button>
-        <button class="bset" style="flex:1" onclick="phStart(${it.id})">📷 写真</button>
+        ${can('photo_manage')?`<button class="bset" style="flex:1" onclick="phStart(${it.id})">📷 写真</button>`:''}
       </div>
     </div>
     <h2>保管場所ごとの在庫</h2>
@@ -327,8 +355,8 @@ function renderDash(){
     return `<div class="hist">${txD(t)} <b class="${cls}">${t.kind==='out'?'出庫':t.kind==='in'?'入庫':t.kind==='init'?'初期登録':'調整'} ${sign}${t.qty}</b> ${esc(it?.name||'')} ｜ ${esc(t.shelf_code)} ${siteTxt(t)}</div>`;}).join('')||'<div class="empty">まだ記録がありません</div>';
   $('app').innerHTML=`
     <div class="chips"><span class="chip cr">🚨 不足 ${nR}</span><span class="chip ca">⚠️ 注意 ${nA}</span><span class="chip cg">✅ 十分 ${nG}</span><span class="chip cn">棚 ${SHELVES.length}</span><span class="chip cn" style="cursor:pointer" onclick="doLogout()">👤 ${esc(MENAME)}｜ログアウト</span></div>
-    <button class="shipbtn" onclick="NEWSHIP=null;location.hash='newship'">🚚 出荷リストを作成（現場へ資材を送る）</button>
-    ${SHIPS.length?`<h2>最近の出荷</h2><div class="card">${SHIPS.slice(0,5).map(sp=>`<div class="hist" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">📄 ${esc(sp.ship_date)} ${esc(sp.site)} <span style="color:var(--blue)">［リストを開く］</span></div>`).join('')}</div>`:''}
+    ${can('ship_create')?`<button class="shipbtn" onclick="NEWSHIP=null;location.hash='newship'">🚚 出荷リストを作成（現場へ資材を送る）</button>`:''}
+    ${SHIPS.length?`<h2>最近の出荷</h2><div class="card">${SHIPS.slice(0,5).map(sp=>`<div class="hist" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">${sp.status==='received'?'✅':'🟡'} ${esc(sp.ship_date)} ${esc(sp.site)}${sp.status==='received'?` <span style="color:var(--green);font-weight:700">受領済</span>`:` <span style="color:var(--amber);font-weight:700">受領待ち</span>`} <span style="color:var(--blue)">［リストを開く］</span></div>`).join('')}</div>`:''}
     <h2>棚一覧（実際のラック配置 ・ 段をタップで棚ページへ）</h2><div class="rackwrap">${shelfHtml}</div>
     <h2>要対応（不足・注意）</h2>${shortHtml}
     <h2>最近の記録</h2><div class="card">${recent}</div>`;
@@ -350,15 +378,15 @@ function renderShelf(s){
       </div>
       <div class="subline">直近30日出庫 ${o}${esc(it?.unit||'')}${leftTxt} ・ 最低基準 ${Number(it?.min_qty||0)}</div>
       <div class="btnrow">
-        <button class="bin" onclick="mvModal(${iid},'${s.code}','in')">＋ 入庫</button>
-        <button class="bset" onclick="minModal(${iid})">⚙</button>
+        ${can('stock_in')?`<button class="bin" onclick="mvModal(${iid},'${s.code}','in')">＋ 入庫</button>`:''}
+        ${can('item_edit')?`<button class="bset" onclick="minModal(${iid})">⚙</button>`:''}
         <button class="bset" onclick="fixModal(${iid},'${s.code}')">✏️</button>
-        <button class="bset" onclick="phStart(${iid})">📷</button>
+        ${can('photo_manage')?`<button class="bset" onclick="phStart(${iid})">📷</button>`:''}
       </div></div>`;
   }).join('');
   $('app').innerHTML=`
     <div class="chips"><span class="chip cn">${esc(s.label)} ・ Aエリア</span></div>
-    <button class="baddbig" onclick="addModal('${s.code}')">＋ この棚に資材を登録（棚卸・新規）</button>
+    ${can('stock_in')?`<button class="baddbig" onclick="addModal('${s.code}')">＋ この棚に資材を登録（棚卸・新規）</button>`:''}
     <div class="cap" style="margin:-6px 0 10px">💡 出庫は 🏠全体 → 「🚚 出荷リストを作成」から（案件ごとに記録・リスト印刷）</div>
     ${rows||'<div class="empty">この棚にはまだ資材が登録されていません。<br>上のボタンから登録してください。</div>'}
     <h2>この棚の記録</h2><div class="card">${
@@ -450,7 +478,7 @@ window.addModal=function(shelf){
     <input id="mSearch" placeholder="例: ボルト / GBP / P1-01" oninput="pickList('${shelf}')">
     <div class="pick" id="mPick"></div>
     <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button>
-    <button class="mok" onclick="newItemModal('${shelf}')">＋ 新規資材を作成</button></div>`);
+    ${can('item_create')?`<button class="mok" onclick="newItemModal('${shelf}')">＋ 新規資材を作成</button>`:''}</div>`);
   pickList(shelf); setTimeout(()=>$('mSearch').focus(),100);
 };
 window.pickList=function(shelf){
@@ -622,8 +650,9 @@ window.doDecide=async function(id,action){
 let PH_TARGET=null;
 let LB={iid:null,idx:0};
 window.showPhs=function(iid){
-  const phs=photosFor(iid); if(!phs.length){phStart(iid);return;}
+  const phs=photosFor(iid); if(!phs.length){if(can('photo_manage'))phStart(iid);return;}
   LB.iid=iid; LB.idx=0; lbRender();
+  const bt=document.querySelector('.lbbtm'); if(bt)bt.style.display=can('photo_manage')?'':'none';
   $('lb').classList.add('on');
 };
 function lbRender(){
@@ -1107,7 +1136,7 @@ function shipRowsHtml(){
         <div class="iname">📄 ${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）　${esc(sp.site)}</div>
         <div class="imeta">${items.length}品目・計${totalQ}点 ${summary?'｜ '+summary+(items.length>3?' …':''):''}</div>
         <div class="imeta">担当 ${esc(sp.created_by||'—')}${sp.recipient_name?' ・ 現場 '+esc(sp.recipient_name):''} ・ リストNo. S-${sp.id}</div>
-      </div><span class="badge bn">開く ›</span></div></div>`;
+      </div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${shipStatusBadge(sp)}<span class="badge bn">開く ›</span>${can('ship_delete')?`<button class="bset" style="padding:4px 10px;font-size:.72rem;color:var(--red)" onclick="delShip(${sp.id},event)">🗑 削除</button>`:''}</div></div></div>`;
   }).join('')||'<div class="empty">該当する出荷履歴がありません</div>';
 }
 function renderShips(){
@@ -1115,7 +1144,7 @@ function renderShips(){
   $('app').innerHTML=`
     <div class="chips"><span class="chip cn">出荷 ${SHIPS.length}件</span><span class="chip cn">タップで出荷リスト（印刷可）を再表示</span></div>
     <input placeholder="🔍 案件名・日付で検索…" value="${esc(SHIPQ)}" oninput="SHIPQ=this.value;$('shipList').innerHTML=shipRowsHtml()" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;margin-bottom:10px">
-    <button class="shipbtn" onclick="NEWSHIP=null;location.hash='newship'">＋ 新しい出荷リストを作成</button>
+    ${can('ship_create')?`<button class="shipbtn" onclick="NEWSHIP=null;location.hash='newship'">＋ 新しい出荷リストを作成</button>`:''}
     <div id="shipList">${shipRowsHtml()}</div>`;
 }
 function renderShip(sp){
@@ -1135,11 +1164,38 @@ function renderShip(sp){
       <td class="ntd">${q} <span style="font-size:.7rem;font-weight:400">${esc(it?.unit||'')}</span></td>
     </tr>`;
   }).join('');
+  const ck=Array.isArray(sp.receive_checks)?sp.receive_checks:[];
+  const ng=ck.filter(c=>!c.checked);
+  const statusCard=sp.receive_token?(sp.status==='received'
+    ?`<div class="card noprint" style="background:var(--greenbg);border-color:#bfe3cf">
+        <div class="itemrow"><div style="flex:1">
+          <div class="iname">✅ 現場で受領確認済み</div>
+          <div class="imeta">受領者 <b>${esc(sp.received_by||'')}</b>${sp.received_tel?'（'+esc(sp.received_tel)+'）':''} ・ ${esc(fmtDT(sp.received_at))}</div>
+          ${sp.receive_note?`<div class="subline">📝 ${esc(sp.receive_note)}</div>`:''}
+        </div><span class="badge bg">受領済</span></div>
+        ${ng.length?`<div style="margin-top:6px;font-size:.8rem;color:var(--red)"><b>⚠️ 未確認・問題あり:</b> ${ng.map(c=>esc(c.name)+'×'+c.qty).join('、')}</div>`:''}
+      </div>`
+    :`<div class="card noprint" style="background:var(--amberbg);border-color:#eeddb5">
+        <div class="itemrow"><div style="flex:1">
+          <div class="iname">🟡 現場の受領確認 待ち</div>
+          <div class="imeta">箱のQR（下の受領確認QR）を現場担当者が読み取ると「受領済」になります</div>
+        </div><button class="bset" onclick="showReceiptQR(${sp.id})">🏷 受領QRを表示</button></div>
+      </div>`):'';
+  const rqr=sp.receive_token?`
+      <div class="rqrbox">
+        <img src="${qrDataUrl(receiptUrl(sp),6,3)}" alt="受領確認QR">
+        <div>
+          <div class="tt">📱 現場担当者様へ — 受領確認のお願い</div>
+          <div class="tx">お荷物を受け取られましたら、このQRコードをスマホのカメラで読み取ってください。<br>内容物のチェックリストが開きます（アプリ・ログイン不要）。確認のうえ<b>「✅ 受領確認する」</b>ボタンを押してください。<br><b>リストNo. S-${sp.id}</b> ・ お問い合わせ: しろくま電力 購買部</div>
+        </div>
+      </div>`:'';
   $('app').innerHTML=`
     <div class="btnrow noprint" style="margin-bottom:10px">
       <button class="mcancel" style="flex:1;padding:12px 0" onclick="location.hash=''">← 戻る</button>
       <button class="mok" style="flex:2;padding:12px 0" onclick="window.print()">🖨 印刷（A4）</button>
+      ${can('ship_delete')?`<button class="bset" style="padding:12px 14px;color:var(--red)" onclick="delShip(${sp.id})">🗑</button>`:''}
     </div>
+    ${statusCard}
     <div class="sdoc">
       <h1>出荷リスト</h1>
       <div style="font-size:.8rem;color:#475569">しろくま電力株式会社 購買部 ・ 野田倉庫</div>
@@ -1153,9 +1209,252 @@ function renderShip(sp){
         <tr><th style="width:36px">No</th><th style="width:80px">QR</th><th>品名・型番</th><th style="width:92px">数量</th></tr>
         ${rows}
       </table>
-      <div class="foot">※ 各QRコードをスマホで読み取ると、その資材の倉庫在庫（残数・保管場所）が確認できます（要ログイン・承認済みアカウント）。<br>発行: ${esc(sp.created_at?.slice(0,10)||'')} ・ リストNo. S-${sp.id}</div>
+      ${rqr}
+      <div class="foot">※ 資材ごとの小さいQR＝倉庫在庫の確認（要ログイン）／ 枠内の大きいQR＝受領確認（ログイン不要）。<br>発行: ${esc(sp.created_at?.slice(0,10)||'')} ・ リストNo. S-${sp.id}</div>
     </div>`;
 }
+
+/* ---------- 出荷リスト削除（マスター） ---------- */
+window.delShip=async function(sid,ev){
+  if(ev)ev.stopPropagation();
+  const sp=SHIPS.find(x=>x.id===sid); if(!sp)return;
+  if(!can('ship_delete')){toast('権限がありません（管理者のみ）');return;}
+  const txs=TX.filter(t=>t.shipment_id===sid);
+  if(!confirm(`出荷リスト S-${sid} を削除します。\n${sp.ship_date} ${sp.site}${sp.status==='received'?'（受領済み）':''}\n\n出庫記録 ${txs.length}件も取り消され、在庫がその分元に戻ります。\nよろしいですか？`))return;
+  if(!confirm('⚠️ この操作は元に戻せません。本当に削除しますか？'))return;
+  try{
+    const r=await api('rpc/qr_delete_shipment',{method:'POST',body:JSON.stringify({p_id:sid})});
+    if(r&&r.ok){
+      await loadAll();
+      if(location.hash==='#ships')render(); else {location.hash='ships'; if(READY)render();}
+      toast(`S-${sid} を削除しました（出庫${r.deleted_tx}件分の在庫を復元）`);
+    }else{
+      toast(r&&r.error==='forbidden'?'権限がありません（管理者のみ）':'エラー: 削除できませんでした');
+    }
+  }catch(e){toast('エラー: 削除できませんでした');console.error(e);}
+};
+
+/* ---------- ⚙ マスター設定（管理者のみ） ---------- */
+const FEATS=[
+  ['ship_create','🚚 出荷リストの作成','現場へ送る資材の出庫・リスト発行'],
+  ['ship_delete','🗑 出荷リストの削除','リストと出庫記録を取り消し、在庫を復元'],
+  ['stock_in','📥 入庫・棚卸の登録','＋入庫ボタン、棚への資材登録'],
+  ['item_create','🆕 新規資材の作成','マスターにない資材の新規登録'],
+  ['item_edit','⚙ 資材設定の編集','品名・型番・単位・最低在庫の変更'],
+  ['photo_manage','📷 写真の追加・削除','資材写真のアップロード・削除'],
+];
+let AUSERS=[];
+async function renderSettings(){
+  $('hTitle').textContent='⚙ マスター設定';
+  const featRows=FEATS.map(([k,label,desc])=>{
+    const v=PERMS[k]||DEFPERM[k]||'all';
+    return `<div class="chkline" style="cursor:default">
+      <div class="cn2"><div class="nm">${label}</div><div class="mt">${esc(desc)}</div></div>
+      <select data-feat="${k}" style="padding:9px;border:1.5px solid var(--line);border-radius:9px;font-size:.9rem;font-family:inherit">
+        <option value="all" ${v==='all'?'selected':''}>全員OK</option>
+        <option value="admin" ${v==='admin'?'selected':''}>管理者のみ</option>
+      </select></div>`;
+  }).join('');
+  $('app').innerHTML=`
+    <div class="chips"><span class="chip cn">管理者: ${esc(MENAME)}（${esc(ME)}）</span></div>
+    <h2>🔐 機能ごとの権限</h2>
+    <div class="card" style="padding:2px 12px">${featRows}</div>
+    <button class="shipbtn" onclick="saveFeaturePerms()">💾 権限設定を保存</button>
+    <div class="cap" style="margin:-4px 0 12px">「管理者のみ」にすると、他のメンバーの画面からそのボタンが消えます（削除はサーバー側でも二重にブロック）</div>
+    <h2>👥 メンバーと権限（role）</h2>
+    <div id="auList" class="card"><div class="loading" style="padding:14px 0">読み込み中…</div></div>
+    <div class="cap" style="margin:-4px 0 12px">新しいメンバーの参加申請は <a href="#approvals" style="color:var(--blue)">✅ 承認</a> タブから。ここでは承認済みメンバーの権限変更・削除ができます</div>
+    <h2>🔑 承認コードの変更</h2>
+    <div class="card">
+      <label style="font-size:.78rem;color:var(--gray)">現在の承認コード</label>
+      <input id="pinCur" type="password" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem">
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">新しい承認コード（4文字以上）</label>
+      <input id="pinNew" type="password" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem">
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">新しい承認コード（確認）</label>
+      <input id="pinNew2" type="password" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem">
+      <div class="mact"><button class="mok" style="flex:1" onclick="changePin()">変更する</button></div>
+    </div>`;
+  loadAUsers();
+}
+async function loadAUsers(){
+  try{AUSERS=await api('qr_allowed_users?select=email,name,role&order=role,email')||[];}catch(e){AUSERS=[];}
+  const el=$('auList'); if(!el)return;
+  el.innerHTML=AUSERS.map(u=>`
+    <div class="chkline" style="cursor:default">
+      <div class="cn2"><div class="nm">${u.role==='admin'?'👑 ':'👤 '}${esc(u.name||'(名前なし)')}${u.email===ME?' <span style="color:var(--blue);font-size:.72rem">（自分）</span>':''}</div><div class="mt">${esc(u.email)}</div></div>
+      <select onchange="setRole('${esc(u.email)}',this.value)" ${u.email===ME?'disabled':''} style="padding:8px;border:1.5px solid var(--line);border-radius:9px;font-size:.85rem;font-family:inherit">
+        <option value="member" ${u.role!=='admin'?'selected':''}>メンバー</option>
+        <option value="admin" ${u.role==='admin'?'selected':''}>管理者</option>
+      </select>
+      ${u.email===ME?'':`<button class="bset" style="padding:8px 10px;color:var(--red)" onclick="removeUser('${esc(u.email)}')">✖</button>`}
+    </div>`).join('')||'<div class="empty">メンバーがいません</div>';
+}
+window.saveFeaturePerms=async function(){
+  const o={};
+  document.querySelectorAll('[data-feat]').forEach(s=>{o[s.dataset.feat]=s.value;});
+  try{
+    const r=await api('rpc/qr_save_setting',{method:'POST',body:JSON.stringify({p_key:'feature_perms',p_value:JSON.stringify(o)})});
+    if(r&&r.ok){PERMS=o;toast('権限設定を保存しました');}
+    else toast('エラー: 保存できませんでした');
+  }catch(e){toast('エラー');console.error(e);}
+};
+window.setRole=async function(email,role){
+  if(!confirm(`${email} を「${role==='admin'?'管理者':'メンバー'}」に変更しますか？`)){loadAUsers();return;}
+  try{
+    await api('qr_allowed_users?email=eq.'+encodeURIComponent(email),{method:'PATCH',body:JSON.stringify({role})});
+    toast('変更しました');loadAUsers();
+  }catch(e){toast('エラー');console.error(e);loadAUsers();}
+};
+window.removeUser=async function(email){
+  if(!confirm(`${email} のアクセス権を削除しますか？\n（このメンバーはログインしても閲覧できなくなります）`))return;
+  try{
+    await api('qr_allowed_users?email=eq.'+encodeURIComponent(email),{method:'DELETE'});
+    toast('削除しました');loadAUsers();
+  }catch(e){toast('エラー');console.error(e);}
+};
+window.changePin=async function(){
+  const cur=($('pinCur').value||'').trim(),n1=($('pinNew').value||'').trim(),n2=($('pinNew2').value||'').trim();
+  if(PINHASH&&await sha256(cur)!==PINHASH){toast('現在の承認コードが違います');return;}
+  if(n1.length<4){toast('新しいコードは4文字以上にしてください');return;}
+  if(n1!==n2){toast('新しいコード（確認）が一致しません');return;}
+  try{
+    const h=await sha256(n1);
+    const r=await api('rpc/qr_save_setting',{method:'POST',body:JSON.stringify({p_key:'approval_pin_hash',p_value:h})});
+    if(r&&r.ok){PINHASH=h;$('pinCur').value=$('pinNew').value=$('pinNew2').value='';toast('承認コードを変更しました');}
+    else toast('エラー: 変更できませんでした');
+  }catch(e){toast('エラー');console.error(e);}
+};
+
+/* ---------- 受領確認（現場サイン） ---------- */
+let RCPT={id:null,token:null,data:null,checks:{}};
+function receiptUrl(sp){return location.origin+location.pathname+'#R-'+sp.id+'-'+sp.receive_token;}
+function qrDataUrl(url,cell,margin){const q=qrcode(0,'M');q.addData(url);q.make();return q.createDataURL(cell||4,margin==null?2:margin);}
+function shipStatusBadge(sp){
+  if(!sp||!sp.receive_token)return '';
+  return sp.status==='received'?'<span class="badge bg">✅ 受領済</span>':'<span class="badge ba">🟡 受領待ち</span>';
+}
+function fmtDT(s){if(!s)return '';const d=new Date(s);return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+function parseReceiptHash(h){const m=h.match(/^R-(\d+)-([A-Za-z0-9]+)$/);return m?{id:+m[1],token:m[2]}:null;}
+async function renderReceipt(id,token){
+  const nav=$('hNav'); if(nav)nav.style.display='none';
+  $('hTitle').textContent='📦 受領確認';
+  $('hSub').textContent='しろくま電力 購買部';
+  $('app').innerHTML='<div class="loading">読み込み中…</div>';
+  let d=null;
+  try{d=await api('rpc/qr_receipt_get',{method:'POST',body:JSON.stringify({p_id:id,p_token:token})});}
+  catch(e){console.error(e);$('app').innerHTML='<div class="empty">通信エラーです。電波の良い場所で再読み込みしてください。</div>';return;}
+  if(!d){$('app').innerHTML='<div class="empty">このリンクは無効です。<br>出荷元（しろくま電力 購買部）にご確認ください。</div>';return;}
+  if(RCPT.id!==id){RCPT.checks={};}
+  RCPT.id=id;RCPT.token=token;RCPT.data=d;
+  rcptRender();
+  window.scrollTo(0,0);
+}
+function rcptLinesHtml(readonly){
+  const d=RCPT.data;
+  const ckMap={};
+  if(readonly&&Array.isArray(d.receive_checks))d.receive_checks.forEach(c=>{ckMap[c.item_id]=!!c.checked;});
+  return d.lines.map(l=>{
+    const on=readonly?(Array.isArray(d.receive_checks)?!!ckMap[l.item_id]:true):!!RCPT.checks[l.item_id];
+    return `<div class="chkline ${on?'on':''}" ${readonly?'':`onclick="rcptToggle(${l.item_id})"`}>
+      <div class="chkbox">${on?'✓':''}</div>
+      <div class="cn2"><div class="nm">${esc(l.name)}</div><div class="mt">${esc(l.model||'')}${l.loc_code?' ・ '+esc(l.loc_code):''}</div></div>
+      <div class="qy">${l.qty} <small>${esc(l.unit||'')}</small></div>
+    </div>`;
+  }).join('');
+}
+function rcptRender(){
+  const d=RCPT.data;
+  const head=`<div class="card">
+      <div class="iname" style="font-size:1.05rem">📄 出荷リスト No. S-${d.id}</div>
+      <div class="imeta" style="margin-top:4px">📅 出荷日 <b>${esc(d.ship_date)}</b> ・ 📍 案件 <b>${esc(d.site)}</b></div>
+      <div class="imeta">発行: しろくま電力 購買部 ${esc(d.created_by||'')}</div>
+    </div>`;
+  if(d.status==='received'){
+    const ck=Array.isArray(d.receive_checks)?d.receive_checks:[];
+    const ng=ck.filter(c=>!c.checked);
+    $('app').innerHTML=`
+      <div class="rcptok"><div class="big">✅</div><h2>受領確認 済み</h2>
+        <div style="font-size:.9rem">受領者: <b>${esc(d.received_by||'')}</b>${d.received_tel?'（'+esc(d.received_tel)+'）':''}</div>
+        <div style="font-size:.8rem;color:var(--gray);margin-top:4px">${esc(fmtDT(d.received_at))} 確認</div></div>
+      ${head}
+      <h2>内容物（${d.lines.length}品目）</h2><div class="card" style="padding:2px 12px">${rcptLinesHtml(true)}</div>
+      ${ng.length?`<div class="card warn"><b style="color:var(--red)">⚠️ 未確認・問題ありの品目</b>${ng.map(c=>`<div class="hist">${esc(c.name)} × ${c.qty}</div>`).join('')}</div>`:''}
+      ${d.receive_note?`<div class="card"><b style="font-size:.85rem">📝 メモ</b><div style="font-size:.85rem;margin-top:4px">${esc(d.receive_note)}</div></div>`:''}
+      <div class="cap" style="text-align:center">この画面は閉じて構いません。ご協力ありがとうございました。</div>`;
+    return;
+  }
+  const total=d.lines.length, done=d.lines.filter(l=>RCPT.checks[l.item_id]).length;
+  $('app').innerHTML=`
+    <div class="card" style="background:var(--sky);border-color:#c3d9ec">
+      <b style="font-size:.92rem">🙏 現場担当者様へ</b>
+      <div style="font-size:.83rem;margin-top:4px;line-height:1.65">お荷物のご確認をお願いします。<br>① 下のリストと実物を照合し、品目ごとにタップでチェック ✓<br>② お名前を確認・入力して「受領確認」ボタンを押してください。</div>
+    </div>
+    ${head}
+    <h2>内容物チェック（${done}/${total}）</h2>
+    <div class="card" style="padding:2px 12px">${rcptLinesHtml(false)}</div>
+    <button class="baddbig" style="margin-top:0" onclick="rcptAll()">${done<total?'✔ すべてまとめてチェック':'✖ チェックをすべて外す'}</button>
+    <div class="card">
+      <label style="font-size:.78rem;color:var(--gray)">お名前（必須）— 入力すると候補が出ます。リストにない方はそのまま入力OK</label>
+      <input id="rcName" list="rcpDL" value="${esc(RCPT.name??d.recipient_name??'')}" placeholder="例: 染谷" autocomplete="off" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="rcptRecipInput(this.value)">
+      <datalist id="rcpDL">${(d.recipients||[]).map(r=>`<option value="${esc(r.name)}">`).join('')}</datalist>
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">携帯番号（任意・候補から選ぶと自動入力）</label>
+      <input id="rcTel" value="${esc(RCPT.tel??d.recipient_tel??'')}" placeholder="例: 090-0000-0000" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="RCPT.tel=this.value">
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">メモ（数量違い・破損などがあれば記入）</label>
+      <input id="rcNote" value="${esc(RCPT.note||'')}" placeholder="例: ○○が1個不足" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="RCPT.note=this.value">
+    </div>
+    <button class="shipbtn" style="background:var(--green);font-size:1.05rem;padding:15px" onclick="rcptSubmit()">✅ 受領確認する（${done}/${total} 確認済み）</button>
+    <div class="cap" style="text-align:center">押すと出荷元に「受領済み」として記録されます</div>`;
+}
+window.rcptToggle=function(iid){RCPT.checks[iid]=!RCPT.checks[iid];keepRcptInputs();rcptRender();};
+window.rcptAll=function(){
+  const d=RCPT.data;const all=d.lines.every(l=>RCPT.checks[l.item_id]);
+  d.lines.forEach(l=>{RCPT.checks[l.item_id]=!all;});
+  keepRcptInputs();rcptRender();
+};
+function keepRcptInputs(){
+  if($('rcName'))RCPT.name=$('rcName').value;
+  if($('rcTel'))RCPT.tel=$('rcTel').value;
+  if($('rcNote'))RCPT.note=$('rcNote').value;
+}
+window.rcptRecipInput=function(v){
+  RCPT.name=v;
+  const r=(RCPT.data.recipients||[]).find(x=>x.name===v);
+  if(r){RCPT.tel=r.tel||'';const t=$('rcTel');if(t)t.value=RCPT.tel;}
+};
+window.rcptSubmit=async function(){
+  keepRcptInputs();
+  const d=RCPT.data;
+  const name=(RCPT.name||'').trim();
+  if(!name){toast('お名前を入力してください');$('rcName')?.focus();return;}
+  const unchecked=d.lines.filter(l=>!RCPT.checks[l.item_id]);
+  if(unchecked.length&&!(RCPT.note||'').trim()){
+    toast('未チェックの品目があります。全てチェックするか、メモに理由をご記入ください');return;
+  }
+  const msg=unchecked.length
+    ?`未チェック ${unchecked.length}品目あり（メモ記入済み）。\nこの内容で受領確認を送信しますか？`
+    :`全${d.lines.length}品目を確認しました。\n受領確認を送信しますか？`;
+  if(!confirm(msg))return;
+  const checks=d.lines.map(l=>({item_id:l.item_id,name:l.name,qty:l.qty,unit:l.unit,checked:!!RCPT.checks[l.item_id]}));
+  try{
+    const r=await api('rpc/qr_receipt_confirm',{method:'POST',body:JSON.stringify({
+      p_id:RCPT.id,p_token:RCPT.token,p_name:name,p_tel:(RCPT.tel||'').trim(),p_note:(RCPT.note||'').trim(),p_checks:checks})});
+    if(r&&r.ok){toast('受領確認を送信しました');await renderReceipt(RCPT.id,RCPT.token);}
+    else if(r&&r.error==='already'){toast('すでに受領確認済みです');await renderReceipt(RCPT.id,RCPT.token);}
+    else if(r&&r.error==='name_required'){toast('お名前を入力してください');}
+    else{toast('エラー: 送信できませんでした');}
+  }catch(e){toast('通信エラー: もう一度お試しください');console.error(e);}
+};
+window.showReceiptQR=function(sid){
+  const sp=SHIPS.find(x=>x.id===sid); if(!sp||!sp.receive_token)return;
+  const img=qrDataUrl(receiptUrl(sp),10,4);
+  openMd(`<h3>🏷 受領確認QR — S-${sp.id}</h3>
+    <div style="text-align:center">
+      <img src="${img}" style="width:230px;height:230px;image-rendering:pixelated;border:1px solid var(--line);border-radius:8px;background:#fff">
+      <div style="font-weight:800;color:var(--navy);font-size:1.1rem;margin-top:8px">S-${sp.id} ・ ${esc(sp.site)}</div>
+      <div style="font-size:.75rem;color:var(--gray);margin-top:10px">このQRを資材箱に貼ってください。<br>現場担当者がスマホで読み取ると、内容物の確認と<br>受領サイン（ログイン不要）ができます。<br>スクリーンショット→印刷、または出荷リスト印刷にも同じQRが入ります。</div>
+    </div>
+    <div class="mact"><button class="mcancel" onclick="closeMd()">閉じる</button></div>`);
+};
 
 /* ---------- 認証（Googleログイン + 承認制アクセス） ---------- */
 async function rpcBool(fn){
@@ -1207,10 +1506,20 @@ window.doLogin=async function(){
 window.doLogout=async function(){await sb.auth.signOut();localStorage.removeItem('qr_hash');location.hash='';location.reload();};
 
 /* ---------- boot ---------- */
-window.addEventListener('hashchange',()=>{if(READY)render();});
+window.addEventListener('hashchange',()=>{
+  const h=decodeURIComponent(location.hash.replace('#',''));
+  const p=parseReceiptHash(h);
+  if(p&&!READY){renderReceipt(p.id,p.token);return;}
+  if(READY)render();
+  else if(!p)location.reload(); // 受領画面から他画面へ → 通常起動（ログイン）に戻す
+});
 sb.auth.onAuthStateChange((ev,sess)=>{if(sess){H.Authorization='Bearer '+sess.access_token;}});
 (async()=>{
   try{
+    // 受領確認リンク（#R-…）はログイン不要で直接表示
+    const h0=decodeURIComponent(location.hash.replace('#',''));
+    const p0=parseReceiptHash(h0);
+    if(p0){renderReceipt(p0.id,p0.token);return;}
     const {data}=await sb.auth.getSession(); SESSION=data.session;
     if(!SESSION){renderLogin();return;}
     H.Authorization='Bearer '+SESSION.access_token;
