@@ -184,7 +184,7 @@ const sb=window.supabase.createClient('https://ndbqaphghlfcsfkfwbnn.supabase.co'
 let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],SHIPS=[],RECIPS=[],PINHASH='';
 let SESSION=null,ME='',MENAME='',ISADMIN=false,READY=false;
 /* 機能権限（マスター設定タブで変更・qr_settings feature_perms に保存） */
-let PERMS={};
+let PERMS={},AUTODOMS='';
 const DEFPERM={ship_delete:'admin'}; // 未設定時の既定: 削除のみ管理者、他は全員
 function can(f){if(ISADMIN)return true;return (PERMS[f]||DEFPERM[f]||'all')==='all';}
 const $=id=>document.getElementById(id);
@@ -209,6 +209,7 @@ async function loadAll(){
     api('qr_settings?select=key,value')
   ]);
   PINHASH=(ST||[]).find(x=>x.key==='approval_pin_hash')?.value||'';
+  AUTODOMS=(ST||[]).find(x=>x.key==='auto_domains')?.value||'';
   try{PERMS=JSON.parse((ST||[]).find(x=>x.key==='feature_perms')?.value||'{}')||{};}catch(e){PERMS={};}
 }
 function pendingARs(){return (ARS||[]).filter(r=>r.status==='pending');}
@@ -1264,6 +1265,19 @@ async function renderSettings(){
     <h2>👥 メンバーと権限（role）</h2>
     <div id="auList" class="card"><div class="loading" style="padding:14px 0">読み込み中…</div></div>
     <div class="cap" style="margin:-4px 0 12px">新しいメンバーの参加申請は <a href="#approvals" style="color:var(--blue)">✅ 承認</a> タブから。ここでは承認済みメンバーの権限変更・削除ができます</div>
+    <h2>🏢 自動許可ドメイン</h2>
+    <div class="card">
+      <label style="font-size:.78rem;color:var(--gray)">これらのドメインの会社メールは、Googleログインだけで承認不要で入れます（カンマ区切り）</label>
+      <input id="autoDoms" value="${esc(AUTODOMS)}" placeholder="例: shirokumapower.com,afterfit.co.jp" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:.95rem">
+      <div class="mact"><button class="mok" style="flex:1" onclick="saveAutoDoms()">💾 ドメインを保存</button></div>
+      <div class="cap" style="margin-top:8px">空欄にすると自動許可は停止し、全員が承認制に戻ります</div>
+    </div>
+    <h2>💾 データバックアップ（全テーブル）</h2>
+    <div class="card" style="background:var(--sky);border-color:#c3d9ec;font-size:.82rem;line-height:1.6">
+      🤖 毎日 <b>深夜 3:10</b> にサーバーが全データ（棚・資材・入出庫記録・出荷・受領・写真リスト・メンバー・設定）を自動スナップショット保存します。<b>直近30日分</b>を保管。下から任意の時点のJSONをPCにダウンロードできます。
+    </div>
+    <button class="shipbtn" style="background:var(--green)" onclick="runBackup()">📥 今すぐバックアップを作成</button>
+    <div id="bkList" class="card" style="padding:2px 12px"><div class="loading" style="padding:14px 0">読み込み中…</div></div>
     <h2>🔑 承認コードの変更</h2>
     <div class="card">
       <label style="font-size:.78rem;color:var(--gray)">現在の承認コード</label>
@@ -1275,7 +1289,42 @@ async function renderSettings(){
       <div class="mact"><button class="mok" style="flex:1" onclick="changePin()">変更する</button></div>
     </div>`;
   loadAUsers();
+  loadBackups();
 }
+async function loadBackups(){
+  const el=$('bkList'); if(!el)return;
+  let list=[];
+  try{list=await api('qr_backups?select=id,created_at,note,counts&order=created_at.desc&limit=40')||[];}
+  catch(e){el.innerHTML='<div class="empty">バックアップ一覧を取得できませんでした</div>';return;}
+  el.innerHTML=list.map(b=>{
+    const c=b.counts||{};
+    return `<div class="chkline" style="cursor:default">
+      <div class="cn2"><div class="nm">${b.note==='auto'?'🤖':'👤'} ${esc(fmtDT(b.created_at))} <span style="font-size:.7rem;color:var(--gray)">${b.note==='auto'?'自動':'手動'}</span></div>
+      <div class="mt">資材${c.items??'?'} ・ 記録${c.transactions??'?'} ・ 出荷${c.shipments??'?'} ・ 棚${c.shelves??'?'} ・ 写真${c.photos??'?'}</div></div>
+      <button class="bset" onclick="dlBackup(${b.id})">⬇ 保存</button>
+    </div>`;
+  }).join('')||'<div class="empty">まだバックアップがありません。「今すぐバックアップ」を押してください</div>';
+}
+window.runBackup=async function(){
+  toast('バックアップを作成中…');
+  try{
+    const r=await api('rpc/qr_run_backup',{method:'POST',body:JSON.stringify({p_note:'manual'})});
+    if(r&&r.ok){toast('バックアップを作成しました');loadBackups();}
+    else toast(r&&r.error==='forbidden'?'権限がありません':'エラー: 作成できませんでした');
+  }catch(e){toast('エラー');console.error(e);}
+};
+window.dlBackup=async function(id){
+  toast('ダウンロード準備中…');
+  try{
+    const rows=await api('qr_backups?id=eq.'+id+'&select=created_at,data');
+    if(!rows||!rows[0]){toast('取得できませんでした');return;}
+    const stamp=(rows[0].created_at||'').slice(0,16).replace('T','_').replace(/:/g,'');
+    const blob=new Blob([JSON.stringify(rows[0].data,null,1)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download='QR棚管理_全データバックアップ_'+stamp+'.json';a.click();
+    toast('JSONをダウンロードしました');
+  }catch(e){toast('エラー');console.error(e);}
+};
 async function loadAUsers(){
   try{AUSERS=await api('qr_allowed_users?select=email,name,role&order=role,email')||[];}catch(e){AUSERS=[];}
   const el=$('auList'); if(!el)return;
@@ -1306,10 +1355,20 @@ window.setRole=async function(email,role){
   }catch(e){toast('エラー');console.error(e);loadAUsers();}
 };
 window.removeUser=async function(email){
-  if(!confirm(`${email} のアクセス権を削除しますか？\n（このメンバーはログインしても閲覧できなくなります）`))return;
+  const dom=(email.split('@')[1]||'').toLowerCase();
+  const isAuto=AUTODOMS.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean).includes(dom);
+  if(!confirm(`${email} のアクセス権を削除しますか？\n（このメンバーはログインしても閲覧できなくなります）${isAuto?'\n\n※ このメールは自動許可ドメインのため、再ログインすると復活します。完全に止めるには「自動許可ドメイン」から '+dom+' を外してください。':''}`))return;
   try{
     await api('qr_allowed_users?email=eq.'+encodeURIComponent(email),{method:'DELETE'});
     toast('削除しました');loadAUsers();
+  }catch(e){toast('エラー');console.error(e);}
+};
+window.saveAutoDoms=async function(){
+  const v=($('autoDoms').value||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean).join(',');
+  try{
+    const r=await api('rpc/qr_save_setting',{method:'POST',body:JSON.stringify({p_key:'auto_domains',p_value:v})});
+    if(r&&r.ok){AUTODOMS=v;$('autoDoms').value=v;toast(v?'自動許可ドメインを保存しました':'自動許可を停止しました（承認制のみ）');}
+    else toast('エラー: 保存できませんでした');
   }catch(e){toast('エラー');console.error(e);}
 };
 window.changePin=async function(){
@@ -1528,6 +1587,7 @@ sb.auth.onAuthStateChange((ev,sess)=>{if(sess){H.Authorization='Bearer '+sess.ac
     const saved=localStorage.getItem('qr_hash');
     if(saved&&!location.hash){history.replaceState(null,'',location.pathname+saved);}
     localStorage.removeItem('qr_hash');
+    try{await api('rpc/qr_autoregister',{method:'POST',body:'{}'});}catch(e){} // 会社ドメインは自動許可
     if(!await rpcBool('qr_is_allowed')){renderWait();return;}
     ISADMIN=await rpcBool('qr_is_admin');
     await loadAll();READY=true;render();
