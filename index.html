@@ -181,7 +181,7 @@ const URL0='https://ndbqaphghlfcsfkfwbnn.supabase.co/rest/v1/';
 const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kYnFhcGhnaGxmY3Nma2Z3Ym5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NTExNTIsImV4cCI6MjA5NDMyNzE1Mn0.F_iAEpv8yz7Cyy6ra6svJa8GdZnoyguayxAsFSuEcrY';
 const H={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
 const sb=window.supabase.createClient('https://ndbqaphghlfcsfkfwbnn.supabase.co',KEY);
-let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],SHIPS=[],RECIPS=[],PINHASH='';
+let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],SHIPS=[],RECIPS=[],NEWM=[],PINHASH='';
 let SESSION=null,ME='',MENAME='',ISADMIN=false,READY=false;
 /* 機能権限（マスター設定タブで変更・qr_settings feature_perms に保存） */
 let PERMS={},AUTODOMS='';
@@ -197,7 +197,7 @@ async function api(path,opt){
 }
 async function loadAll(){
   let ST;
-  [SHELVES,ITEMS,TX,REQS,PHOTOS,ARS,SHIPS,RECIPS,ST]=await Promise.all([
+  [SHELVES,ITEMS,TX,REQS,PHOTOS,ARS,SHIPS,RECIPS,NEWM,ST]=await Promise.all([
     api('qr_shelves?select=*&order=sort'),
     api('qr_items?select=*&order=item_code&limit=5000'),
     api('qr_transactions?select=*&order=created_at.desc&limit=10000'),
@@ -206,6 +206,7 @@ async function loadAll(){
     ISADMIN?api('qr_access_requests?select=*&order=created_at.desc&limit=100'):Promise.resolve([]),
     api('qr_shipments?select=*&order=ship_date.desc,id.desc&limit=500'),
     api('qr_recipients?select=*&active=eq.true&order=sort,id&limit=300'),
+    ISADMIN?api('qr_allowed_users?select=email,name,role,ack,joined_at&ack=eq.false&order=joined_at.desc&limit=100').catch(()=>[]):Promise.resolve([]),
     api('qr_settings?select=key,value')
   ]);
   PINHASH=(ST||[]).find(x=>x.key==='approval_pin_hash')?.value||'';
@@ -250,7 +251,7 @@ function render(){
   const tip=$('ctip'); if(tip)tip.style.display='none';
   const nav=$('hNav'); if(nav)nav.style.display='';
   const hs=$('hSet'); if(hs)hs.style.display=ISADMIN?'':'none';
-  const n=pendingReqs().length+(ISADMIN?pendingARs().length:0);
+  const n=pendingReqs().length+(ISADMIN?pendingARs().length+NEWM.length:0);
   $('hAppr').textContent=n?`✅ 承認(${n})`:'✅ 承認';
   const h=decodeURIComponent(location.hash.replace('#',''));
   const rp=parseReceiptHash(h);
@@ -608,13 +609,43 @@ function renderApprovals(){
         <button class="bin" onclick="userDecide(${r.id},'approve')">✅ アクセスを承認</button>
         <button class="bset" style="flex:1" onclick="userDecide(${r.id},'reject')">✖ 却下</button>
       </div></div>`).join('');
+  const newRows=NEWM.map(u=>`<div class="card" style="background:#f4f9ff;border-color:#c3d9ec">
+      <div class="iname">🆕 ${esc(u.name||'(名前なし)')} <span style="font-size:.72rem;color:var(--blue)">会社ドメイン自動入場</span></div>
+      <div class="imeta">${esc(u.email)} ・ ${u.joined_at?fmtDT(u.joined_at)+' 入場':''}</div>
+      <div class="btnrow">
+        <button class="bin" onclick="ackUser('${esc(u.email)}')">✅ 確認OK（通知を消す）</button>
+        <button class="bset" style="flex:1;color:var(--red)" onclick="blockUser('${esc(u.email)}')">🚫 ブロック</button>
+      </div></div>`).join('');
   $('app').innerHTML=`
-    <div class="chips"><span class="chip ${(pend.length+uPend.length)?'cr':'cn'}">承認待ち ${pend.length+uPend.length}件</span><span class="chip cn">最終承認者: 李相勲</span></div>
+    <div class="chips"><span class="chip ${(pend.length+uPend.length+NEWM.length)?'cr':'cn'}">要対応 ${pend.length+uPend.length+NEWM.length}件</span><span class="chip cn">最終承認者: 李相勲</span></div>
+    ${ISADMIN&&NEWM.length?`<h2>🔔 新しく入ったメンバー（自動許可・要確認）</h2>${newRows}`:''}
     ${ISADMIN?`<h2>👤 ユーザー承認（アクセス申請）</h2>${uRows||'<div class="empty">アクセス申請はありません</div>'}`:''}
     <h2>📦 在庫の修正・削除申請</h2>
     ${rows}
     <h2>処理済み（直近10件）</h2><div class="card">${done}</div>`;
 }
+window.ackUser=async function(email){
+  try{
+    await api('qr_allowed_users?email=eq.'+encodeURIComponent(email),{method:'PATCH',body:JSON.stringify({ack:true})});
+    await loadAll();render();toast('確認しました');
+  }catch(e){toast('エラー');console.error(e);}
+};
+window.blockUser=async function(email){
+  if(!confirm(`${email} をブロックしますか？\n\n・アクセス権を即時削除\n・会社ドメインでも再ログインで入れなくなります\n（解除は ⚙設定 の「ブロック一覧」から）`))return;
+  try{
+    const r=await api('rpc/qr_block_user',{method:'POST',body:JSON.stringify({p_email:email})});
+    if(r&&r.ok){await loadAll();render();toast('ブロックしました');}
+    else toast(r&&r.error==='self'?'自分はブロックできません':'エラー');
+  }catch(e){toast('エラー');console.error(e);}
+};
+window.unblockUser=async function(email){
+  if(!confirm(`${email} のブロックを解除しますか？\n（会社ドメインなら再ログインでまた入れるようになります）`))return;
+  try{
+    const r=await api('rpc/qr_unblock_user',{method:'POST',body:JSON.stringify({p_email:email})});
+    if(r&&r.ok){await loadAll();if(location.hash==='#settings')renderSettings();else render();toast('ブロックを解除しました');}
+    else toast('エラー');
+  }catch(e){toast('エラー');console.error(e);}
+};
 window.userDecide=async function(id,action){
   const r=ARS.find(x=>x.id===id); if(!r)return;
   if(!confirm((action==='approve'?'アクセス承認':'却下')+': '+r.email+' でよろしいですか？'))return;
@@ -1272,6 +1303,9 @@ async function renderSettings(){
       <div class="mact"><button class="mok" style="flex:1" onclick="saveAutoDoms()">💾 ドメインを保存</button></div>
       <div class="cap" style="margin-top:8px">空欄にすると自動許可は停止し、全員が承認制に戻ります</div>
     </div>
+    <h2>🚫 ブロック一覧</h2>
+    <div id="blkList" class="card" style="padding:2px 12px">${blockedListHtml()}</div>
+    <div class="cap" style="margin:-4px 0 12px">ブロック中は会社ドメインでも入れません。解除すると再ログインで入れます</div>
     <h2>💾 データバックアップ（全テーブル）</h2>
     <div class="card" style="background:var(--sky);border-color:#c3d9ec;font-size:.82rem;line-height:1.6">
       🤖 毎日 <b>深夜 3:10</b> にサーバーが全データ（棚・資材・入出庫記録・出荷・受領・写真リスト・メンバー・設定）を自動スナップショット保存します。<b>直近30日分</b>を保管。下から任意の時点のJSONをPCにダウンロードできます。
@@ -1325,12 +1359,20 @@ window.dlBackup=async function(id){
     toast('JSONをダウンロードしました');
   }catch(e){toast('エラー');console.error(e);}
 };
+function blockedListHtml(){
+  const seen={}, blocked=[];
+  (ARS||[]).forEach(r=>{if(r.status==='rejected'&&!seen[(r.email||'').toLowerCase()]){seen[(r.email||'').toLowerCase()]=1;blocked.push(r);}});
+  return blocked.map(r=>`<div class="chkline" style="cursor:default">
+      <div class="cn2"><div class="nm">🚫 ${esc(r.name||'(名前なし)')}</div><div class="mt">${esc(r.email)}</div></div>
+      <button class="bset" onclick="unblockUser('${esc(r.email)}')">🔓 解除</button>
+    </div>`).join('')||'<div class="empty" style="padding:14px 0">ブロック中のユーザーはいません</div>';
+}
 async function loadAUsers(){
-  try{AUSERS=await api('qr_allowed_users?select=email,name,role&order=role,email')||[];}catch(e){AUSERS=[];}
+  try{AUSERS=await api('qr_allowed_users?select=email,name,role,ack&order=role,email')||[];}catch(e){AUSERS=[];}
   const el=$('auList'); if(!el)return;
   el.innerHTML=AUSERS.map(u=>`
     <div class="chkline" style="cursor:default">
-      <div class="cn2"><div class="nm">${u.role==='admin'?'👑 ':'👤 '}${esc(u.name||'(名前なし)')}${u.email===ME?' <span style="color:var(--blue);font-size:.72rem">（自分）</span>':''}</div><div class="mt">${esc(u.email)}</div></div>
+      <div class="cn2"><div class="nm">${u.role==='admin'?'👑 ':'👤 '}${esc(u.name||'(名前なし)')}${u.ack===false?' <span style="color:var(--amber);font-size:.72rem">🆕未確認</span>':''}${u.email===ME?' <span style="color:var(--blue);font-size:.72rem">（自分）</span>':''}</div><div class="mt">${esc(u.email)}</div></div>
       <select onchange="setRole('${esc(u.email)}',this.value)" ${u.email===ME?'disabled':''} style="padding:8px;border:1.5px solid var(--line);border-radius:9px;font-size:.85rem;font-family:inherit">
         <option value="member" ${u.role!=='admin'?'selected':''}>メンバー</option>
         <option value="admin" ${u.role==='admin'?'selected':''}>管理者</option>
