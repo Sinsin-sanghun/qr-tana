@@ -1100,7 +1100,7 @@ function renderNewShip(){
       <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">案件・行き先（必須）</label>
       <input id="shSite" list="siteDL" value="${esc(NEWSHIP.site)}" placeholder="例: 石山案件" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="NEWSHIP.site=this.value">
       <datalist id="siteDL">${siteList().map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
-      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">現場番号（工事No.・案件No.など・任意）— 印刷リストに表示されます</label>
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">案件番号（工事No.など・任意）— 印刷リストに表示されます</label>
       <input id="shSiteNo" value="${esc(NEWSHIP.siteNo||'')}" placeholder="例: K-2026-041" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="NEWSHIP.siteNo=this.value">
       <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">現場担当者（受取人）— 入力すると候補が出ます。リストにない人はそのまま入力OK</label>
       <input id="shRecip" list="recipDL" value="${esc(NEWSHIP.rname)}" placeholder="例: 染谷（入力または選択）" autocomplete="off" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="shipRecipInput(this.value)">
@@ -1221,7 +1221,7 @@ function shipRowsHtml(){
       <div class="itemrow"><input type="checkbox" ${MSEL.has(sp.id)?'checked':''} title="まとめリストに含める" style="width:22px;height:22px;flex-shrink:0;accent-color:#16324f;cursor:pointer" onclick="event.stopPropagation()" onchange="toggleMsel(${sp.id},this.checked)"><div style="flex:1">
         <div class="iname">📄 ${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）　${esc(sp.site)}</div>
         <div class="imeta">${items.length}品目・計${totalQ}点 ${summary?'｜ '+summary+(items.length>3?' …':''):''}</div>
-        <div class="imeta">担当 ${esc(sp.created_by||'—')}${sp.recipient_name?' ・ 現場 '+esc(sp.recipient_name):''}${sp.site_no?' ・ 現場No. '+esc(sp.site_no):''} ・ リストNo. S-${sp.id}</div>
+        <div class="imeta">担当 ${esc(sp.created_by||'—')}${sp.recipient_name?' ・ 現場 '+esc(sp.recipient_name):''}${sp.site_no?' ・ 案件No. '+esc(sp.site_no):''} ・ リストNo. S-${sp.id}</div>
       </div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${shipStatusBadge(sp)}<span class="badge bn">開く ›</span>${can('ship_delete')?`<button class="bset" style="padding:4px 10px;font-size:.72rem;color:var(--red)" onclick="delShip(${sp.id},event)">🗑 削除</button>`:''}</div></div></div>`;
   }).join('')||'<div class="empty">該当する出荷履歴がありません</div>';
 }
@@ -1285,7 +1285,7 @@ function renderMerged(ids){
       <div style="font-size:.8rem;color:#475569">しろくま電力株式会社 購買部 ・ 野田倉庫</div>
       <div class="smeta">
         <div>📅 出荷日: <b>${dates.map(esc).join(' / ')}</b></div>
-        <div>📍 案件: <b>${sites.map(esc).join(' / ')}</b>${[...new Set(sps.map(s=>s.site_no).filter(Boolean))].length?`　🔢 現場番号: <b>${[...new Set(sps.map(s=>s.site_no).filter(Boolean))].map(esc).join(' / ')}</b>`:''}</div>
+        <div>📍 案件: <b>${sites.map(esc).join(' / ')}</b>${[...new Set(sps.map(s=>s.site_no).filter(Boolean))].length?`　🔢 案件番号: <b>${[...new Set(sps.map(s=>s.site_no).filter(Boolean))].map(esc).join(' / ')}</b>`:''}</div>
         ${sp0.recipient_name?`<div>👤 現場担当: <b>${esc(sp0.recipient_name)}</b>${sp0.recipient_tel?`（📞 ${esc(sp0.recipient_tel)}）`:''}</div>`:''}
         <div>担当: ${esc(sp0.created_by||'')}</div>
       </div>
@@ -1350,7 +1350,7 @@ function renderShip(sp){
       <div style="font-size:.8rem;color:#475569">しろくま電力株式会社 購買部 ・ 野田倉庫</div>
       <div class="smeta">
         <div>📅 出荷日: <b>${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）</b></div>
-        <div>📍 案件: <b>${esc(sp.site)}</b>${sp.site_no?`　🔢 現場番号: <b>${esc(sp.site_no)}</b>`:''}</div>
+        <div>📍 案件: <b>${esc(sp.site)}</b>${sp.site_no?`　🔢 案件番号: <b>${esc(sp.site_no)}</b>`:''}</div>
         ${sp.recipient_name?`<div>👤 現場担当: <b>${esc(sp.recipient_name)}</b>${sp.recipient_tel?`（📞 ${esc(sp.recipient_tel)}）`:''}</div>`:''}
         <div>担当: ${esc(sp.created_by||'')}</div>
       </div>
@@ -1594,7 +1594,7 @@ function rcptRender(){
   const d=RCPT.data;
   const head=`<div class="card">
       <div class="iname" style="font-size:1.05rem">📄 出荷リスト No. S-${d.id}</div>
-      <div class="imeta" style="margin-top:4px">📅 出荷日 <b>${esc(d.ship_date)}</b> ・ 📍 案件 <b>${esc(d.site)}</b>${d.site_no?` ・ 🔢 現場番号 <b>${esc(d.site_no)}</b>`:''}</div>
+      <div class="imeta" style="margin-top:4px">📅 出荷日 <b>${esc(d.ship_date)}</b> ・ 📍 案件 <b>${esc(d.site)}</b>${d.site_no?` ・ 🔢 案件番号 <b>${esc(d.site_no)}</b>`:''}</div>
       <div class="imeta">発行: しろくま電力 購買部 ${esc(d.created_by||'')}</div>
     </div>`;
   if(d.status==='received'){
