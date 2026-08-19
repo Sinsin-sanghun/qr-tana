@@ -367,7 +367,7 @@ function renderDash(){
   $('app').innerHTML=`
     <div class="chips"><span class="chip cr">🚨 不足 ${nR}</span><span class="chip ca">⚠️ 注意 ${nA}</span><span class="chip cg">✅ 十分 ${nG}</span><span class="chip cn">棚 ${SHELVES.length}</span><span class="chip cn" style="cursor:pointer" onclick="doLogout()">👤 ${esc(MENAME)}｜ログアウト</span></div>
     ${can('ship_create')?`<button class="shipbtn" onclick="NEWSHIP=null;location.hash='newship'">🚚 出荷リストを作成（現場へ資材を送る）</button>`:''}
-    ${SHIPS.length?`<h2>最近の出荷</h2><div class="card">${SHIPS.slice(0,5).map(sp=>`<div class="hist" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">${sp.status==='received'?'✅':'🟡'} ${esc(sp.ship_date)} ${esc(sp.site)}${sp.status==='received'?` <span style="color:var(--green);font-weight:700">受領済</span>`:` <span style="color:var(--amber);font-weight:700">受領待ち</span>`} <span style="color:var(--blue)">［リストを開く］</span></div>`).join('')}</div>`:''}
+    ${SHIPS.length?`<h2>最近の出荷</h2><div class="card">${SHIPS.slice(0,5).map(sp=>`<div class="hist" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">${sp.status==='received'?'✅':'🟡'} ${sp.site_no?esc(sp.site_no)+' ':''}${esc(sp.ship_date)} ${esc(sp.site)}${sp.status==='received'?` <span style="color:var(--green);font-weight:700">受領済</span>`:` <span style="color:var(--amber);font-weight:700">受領待ち</span>`} <span style="color:var(--blue)">［リストを開く］</span></div>`).join('')}</div>`:''}
     <h2>棚一覧（実際のラック配置 ・ 段をタップで棚ページへ）</h2><div class="rackwrap">${shelfHtml}</div>
     <h2>要対応（不足・注意）</h2>${shortHtml}
     <h2>最近の記録</h2><div class="card">${recent}</div>`;
@@ -1219,9 +1219,9 @@ function shipRowsHtml(){
     const summary=items.slice(0,3).map(([iid,v])=>{const it=itemById(+iid);return esc((it?.name||'').slice(0,14))+'×'+v;}).join('、');
     return `<div class="card" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">
       <div class="itemrow"><input type="checkbox" ${MSEL.has(sp.id)?'checked':''} title="まとめリストに含める" style="width:22px;height:22px;flex-shrink:0;accent-color:#16324f;cursor:pointer" onclick="event.stopPropagation()" onchange="toggleMsel(${sp.id},this.checked)"><div style="flex:1">
-        <div class="iname">📄 ${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）　${esc(sp.site)}</div>
+        <div class="iname">📄 ${sp.site_no?`<span style="color:var(--blue)">${esc(sp.site_no)}</span>　`:''}${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）　${esc(sp.site)}</div>
         <div class="imeta">${items.length}品目・計${totalQ}点 ${summary?'｜ '+summary+(items.length>3?' …':''):''}</div>
-        <div class="imeta">担当 ${esc(sp.created_by||'—')}${sp.recipient_name?' ・ 現場 '+esc(sp.recipient_name):''}${sp.site_no?' ・ 案件No. '+esc(sp.site_no):''} ・ リストNo. S-${sp.id}</div>
+        <div class="imeta">担当 ${esc(sp.created_by||'—')}${sp.recipient_name?' ・ 現場 '+esc(sp.recipient_name):''} ・ リストNo. S-${sp.id}</div>
       </div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${shipStatusBadge(sp)}<span class="badge bn">開く ›</span>${can('ship_delete')?`<button class="bset" style="padding:4px 10px;font-size:.72rem;color:var(--red)" onclick="delShip(${sp.id},event)">🗑 削除</button>`:''}</div></div></div>`;
   }).join('')||'<div class="empty">該当する出荷履歴がありません</div>';
 }
