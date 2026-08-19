@@ -1233,14 +1233,21 @@ function shipRowsHtml(){
   return groups.map(g=>{
     const cards=g.items.map(shipCardHtml).join('');
     if(!g.key)return cards;
+    const open=GRPOPEN[g.key]!==false; // 既定は展開
     const sites=[...new Set(g.items.map(s=>s.site).filter(Boolean))];
     const done=g.items.filter(s=>s.status==='received').length;
     return `<div style="display:flex;align-items:center;gap:10px;margin:16px 0 6px;flex-wrap:wrap">
-        <div style="font-weight:800;color:var(--navy);font-size:.95rem">📁 <span style="color:var(--blue)">${esc(g.key)}</span>　${sites.map(esc).join('・')} <span style="font-size:.75rem;color:var(--gray);font-weight:400">（${g.items.length}箱 ・ 受領済 ${done}/${g.items.length}）</span></div>
+        <button class="bset" title="${open?'閉じる':'開く'}" style="width:32px;height:32px;padding:0;font-weight:800;font-size:1.05rem;flex-shrink:0" onclick="toggleGrp('${esc(g.key)}')">${open?'−':'＋'}</button>
+        <div style="font-weight:800;color:var(--navy);font-size:.95rem;cursor:pointer" onclick="toggleGrp('${esc(g.key)}')">📁 <span style="color:var(--blue)">${esc(g.key)}</span>　${sites.map(esc).join('・')} <span style="font-size:.75rem;color:var(--gray);font-weight:400">（${g.items.length}箱 ・ 受領済 ${done}/${g.items.length}）</span></div>
         ${g.items.length>=2?`<button class="bset" style="padding:7px 14px;font-size:.8rem" onclick="mergeGroup('${esc(g.key)}')">📑 総括リスト（${g.items.length}箱まとめて）</button>`:''}
-      </div>${cards}`;
+      </div>${open?cards:''}`;
   }).join('');
 }
+let GRPOPEN={};
+window.toggleGrp=function(k){
+  GRPOPEN[k]=(GRPOPEN[k]===false);
+  const el=$('shipList'); if(el)el.innerHTML=shipRowsHtml();
+};
 window.mergeGroup=function(no){
   const ids=SHIPS.filter(s=>(s.site_no||'')===no).map(s=>s.id).sort((a,b)=>a-b);
   if(ids.length<2){toast('この案件番号の出荷は1件のみです');return;}
