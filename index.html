@@ -1385,6 +1385,11 @@ function renderShip(sp){
         ${sp.used_at
           ?`<div style="margin-top:6px;padding:7px 10px;background:#e3ecfb;border-radius:8px;font-size:.8rem">🧰 <b>使用完了</b>　報告者 <b>${esc(sp.used_by||'')}</b> ・ ${esc(fmtDT(sp.used_at))}<br>${useLeftSummary(sp)?`<b style="color:var(--red)">残あり: ${useLeftSummary(sp)}</b>　→ 返却・次回出荷量の見直し要検討`:'残なし（全て使用）'}${sp.use_note?`<br>📝 ${esc(sp.use_note)}`:''}</div>`
           :`<div style="margin-top:6px;font-size:.78rem;color:var(--gray)">🧰 使用報告 待ち — 現場が同じ受領QRから「すべて使用／残数入力」を報告できます</div>`}
+        ${ISADMIN?`<div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
+          ${sp.used_at?`<button class="bset" style="padding:6px 12px;font-size:.75rem" onclick="resetReceipt(${sp.id},'usage')">↩️ 使用報告をリセット</button>`:''}
+          <button class="bset" style="padding:6px 12px;font-size:.75rem;color:var(--red)" onclick="resetReceipt(${sp.id},'receipt')">↩️ 受領記録をリセット</button>
+          <span style="font-size:.7rem;color:var(--gray);align-self:center">誤操作の取り消し（管理者のみ）・同じQRで再確認できます</span>
+        </div>`:''}
       </div>`
     :`<div class="card noprint" style="background:var(--amberbg);border-color:#eeddb5">
         <div class="itemrow"><div style="flex:1">
@@ -1425,6 +1430,25 @@ function renderShip(sp){
       <div class="foot">※ 資材ごとの小さいQR＝倉庫在庫の確認（要ログイン）／ 枠内の大きいQR＝受領確認（ログイン不要）。<br>発行: ${esc(sp.created_at?.slice(0,10)||'')} ・ リストNo. S-${sp.id}</div>
     </div>`;
 }
+
+/* ---------- 受領・使用記録のリセット（管理者のみ） ---------- */
+window.resetReceipt=async function(sid,mode){
+  if(!ISADMIN){toast('権限がありません（管理者のみ）');return;}
+  const sp=SHIPS.find(x=>x.id===sid); if(!sp)return;
+  const msg=mode==='usage'
+    ?`S-${sid} の使用報告を取り消します。\n受領記録はそのまま残り、現場は同じQRから使用報告をやり直せます。\nよろしいですか？`
+    :`S-${sid} の受領記録を取り消します。\n使用報告があれば一緒に取り消され、状態は「受領待ち」に戻ります。\n現場は同じQRから受領確認をやり直せます。よろしいですか？`;
+  if(!confirm(msg))return;
+  try{
+    const r=await api('rpc/qr_reset_receipt',{method:'POST',body:JSON.stringify({p_id:sid,p_mode:mode})});
+    if(r&&r.ok){
+      await loadAll();render();
+      toast(mode==='usage'?`S-${sid} の使用報告を取り消しました`:`S-${sid} の受領記録を取り消しました（受領待ちに戻りました）`);
+    }else{
+      toast(r&&r.error==='forbidden'?'権限がありません（管理者のみ）':'エラー: 取り消せませんでした');
+    }
+  }catch(e){toast('エラー: 取り消せませんでした');console.error(e);}
+};
 
 /* ---------- 出荷リスト削除（マスター） ---------- */
 window.delShip=async function(sid,ev){
