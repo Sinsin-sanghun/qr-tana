@@ -190,7 +190,7 @@ let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],SHIPS=[],RECIPS=[],NEWM=[
 let SESSION=null,ME='',MENAME='',ISADMIN=false,READY=false;
 /* 機能権限（マスター設定タブで変更・qr_settings feature_perms に保存） */
 let PERMS={},AUTODOMS='';
-const DEFPERM={ship_delete:'admin'}; // 未設定時の既定: 削除のみ管理者、他は全員
+const DEFPERM={ship_delete:'admin',ship_edit:'admin'}; // 未設定時の既定: 削除・修正のみ管理者、他は全員
 function can(f){if(ISADMIN)return true;return (PERMS[f]||DEFPERM[f]||'all')==='all';}
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1053,7 +1053,26 @@ function logFlow(){
 }
 
 /* ---------- 出荷リスト ---------- */
-let NEWSHIP=null;
+let NEWSHIP=null,EDITSHIP=null,EDITOLD={};
+window.editShip=function(sid){
+  const sp=SHIPS.find(x=>x.id===sid); if(!sp)return;
+  if(!can('ship_edit')){toast('権限がありません（管理者のみ）');return;}
+  if(sp.status==='received'&&!confirm('受領済みのリストです。修正しますか？\n（受領記録はそのまま残ります）'))return;
+  EDITOLD={};
+  const lines=TX.filter(t=>t.shipment_id===sid&&t.kind==='out').map(t=>{
+    const q=-Number(t.qty);
+    const k=t.item_id+'|'+t.shelf_code; EDITOLD[k]=(EDITOLD[k]||0)+q;
+    return {item_id:t.item_id,shelf:t.shelf_code,qty:q};
+  });
+  NEWSHIP={date:sp.ship_date,site:sp.site||'',siteNo:sp.site_no||'',rname:sp.recipient_name||'',rtel:sp.recipient_tel||'',rfree:false,lines};
+  EDITSHIP=sid;
+  if(location.hash==='#newship')render(); else location.hash='newship';
+};
+window.cancelShipForm=function(){
+  const back=EDITSHIP;
+  NEWSHIP=null; EDITSHIP=null; EDITOLD={};
+  location.hash=back?('S-'+back):'';
+};
 const WDAY=['日','月','火','水','木','金','土'];
 function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function wdayOf(ds){return WDAY[new Date(ds+'T00:00:00').getDay()];}
@@ -1065,7 +1084,7 @@ function siteList(){
 }
 function renderNewShip(){
   if(!NEWSHIP)NEWSHIP={date:todayStr(),site:'',siteNo:'',rname:'',rtel:'',rfree:false,lines:[]};
-  $('hTitle').textContent='🚚 出荷リスト作成';
+  $('hTitle').textContent=EDITSHIP?('✏️ 出荷リスト S-'+EDITSHIP+' を修正'):'🚚 出荷リスト作成';
   const lines=NEWSHIP.lines.map((l,i)=>{
     const it=itemById(l.item_id);
     return `<div class="card"><div class="itemrow">
@@ -1093,10 +1112,10 @@ function renderNewShip(){
     ${lines||'<div class="empty">まだ資材がありません。下のボタンで追加してください。</div>'}
     <button class="baddbig" onclick="shipAddModal()">＋ 資材を追加</button>
     <div class="btnrow" style="margin-top:4px">
-      <button class="mcancel" style="flex:1;padding:13px 0" onclick="NEWSHIP=null;location.hash=''">キャンセル</button>
-      <button class="mok in" style="flex:2;padding:13px 0" onclick="submitShip()">✅ 確定して出庫（リスト発行）</button>
+      <button class="mcancel" style="flex:1;padding:13px 0" onclick="cancelShipForm()">キャンセル</button>
+      <button class="mok in" style="flex:2;padding:13px 0" onclick="submitShip()">${EDITSHIP?'💾 修正を保存（在庫を再調整）':'✅ 確定して出庫（リスト発行）'}</button>
     </div>
-    <div class="cap">確定すると各資材が在庫から出庫され、印刷用リストが開きます</div>`;
+    <div class="cap">${EDITSHIP?'保存すると出庫記録が新しい内容に置き換わり、在庫も自動調整されます':'確定すると各資材が在庫から出庫され、印刷用リストが開きます'}</div>`;
 }
 window.shipAddModal=function(){
   openMd(`<h3>＋ 送る資材を選択</h3>
@@ -1137,9 +1156,10 @@ window.shipQty=function(iid,shelf){
 };
 window.shipAddLine=function(iid,shelf){
   const q=Number($('mQty').value); if(!q||q<=0){toast('数量を入力してください');return;}
-  const cur=stocksFor(shelf)[iid]||0;
+  const oldQ=EDITSHIP?(EDITOLD[iid+'|'+shelf]||0):0; // 修正時: 元のリスト分は在庫に戻る前提で計算
+  const cur=(stocksFor(shelf)[iid]||0)+oldQ;
   const already=NEWSHIP.lines.filter(l=>l.item_id===iid&&l.shelf===shelf).reduce((a,l)=>a+l.qty,0);
-  if(q+already>cur){toast(`在庫不足です（${shelf} 残 ${cur}、リスト済 ${already}）`);return;}
+  if(q+already>cur){toast(`在庫不足です（${shelf} 利用可 ${cur}、リスト済 ${already}）`);return;}
   NEWSHIP.lines.push({item_id:iid,shelf,qty:q});
   closeMd();renderNewShip();toast('追加しました');
 };
@@ -1154,6 +1174,25 @@ window.shipRecipInput=function(v){
 window.submitShip=async function(){
   if(!NEWSHIP.site.trim()){toast('案件・行き先を入力してください');return;}
   if(!NEWSHIP.lines.length){toast('資材を追加してください');return;}
+  if(EDITSHIP){
+    const sid=EDITSHIP;
+    if(!confirm(`出荷リスト S-${sid} を修正保存します。\n出庫記録が新しい内容に置き換わり、在庫も自動調整されます。\nよろしいですか？`))return;
+    try{
+      const r=await api('rpc/qr_update_shipment',{method:'POST',body:JSON.stringify({
+        p_id:sid,
+        p_header:{ship_date:NEWSHIP.date,site:NEWSHIP.site.trim(),site_no:(NEWSHIP.siteNo||'').trim(),
+          recipient_name:NEWSHIP.rname.trim(),recipient_tel:NEWSHIP.rtel.trim(),
+          created_by:localStorage.getItem('qr_who')||MENAME},
+        p_lines:NEWSHIP.lines.map(l=>({shelf_code:l.shelf,item_id:l.item_id,qty:l.qty}))})});
+      if(r&&r.ok){
+        NEWSHIP=null;EDITSHIP=null;EDITOLD={};
+        await loadAll();location.hash='S-'+sid;render();toast('修正を保存しました（在庫を再調整）');
+      }else{
+        toast(r&&r.error==='forbidden'?'権限がありません（管理者のみ）':'エラー: 保存できませんでした');
+      }
+    }catch(e){toast('エラー: 保存できませんでした');console.error(e);}
+    return;
+  }
   const rInfo=NEWSHIP.rname.trim()?`\n現場担当: ${NEWSHIP.rname.trim()}${NEWSHIP.rtel.trim()?`（${NEWSHIP.rtel.trim()}）`:''}`:'';
   if(!confirm(`${NEWSHIP.date}（${wdayOf(NEWSHIP.date)}） ${NEWSHIP.site}${rInfo}\n${NEWSHIP.lines.length}件の資材を出庫してリストを発行します。よろしいですか？`))return;
   try{
@@ -1302,7 +1341,8 @@ function renderShip(sp){
     <div class="btnrow noprint" style="margin-bottom:10px">
       <button class="mcancel" style="flex:1;padding:12px 0" onclick="location.hash=''">← 戻る</button>
       <button class="mok" style="flex:2;padding:12px 0" onclick="window.print()">🖨 印刷（A4）</button>
-      ${can('ship_delete')?`<button class="bset" style="padding:12px 14px;color:var(--red)" onclick="delShip(${sp.id})">🗑</button>`:''}
+      ${can('ship_edit')?`<button class="bset" style="padding:12px 14px" title="修正" onclick="editShip(${sp.id})">✏️</button>`:''}
+      ${can('ship_delete')?`<button class="bset" style="padding:12px 14px;color:var(--red)" title="削除" onclick="delShip(${sp.id})">🗑</button>`:''}
     </div>
     ${statusCard}
     <div class="sdoc">
@@ -1347,6 +1387,7 @@ window.delShip=async function(sid,ev){
 const FEATS=[
   ['ship_create','🚚 出荷リストの作成','現場へ送る資材の出庫・リスト発行'],
   ['ship_delete','🗑 出荷リストの削除','リストと出庫記録を取り消し、在庫を復元'],
+  ['ship_edit','✏️ 出荷リストの修正','発行済みリストの内容変更（在庫は自動調整）'],
   ['stock_in','📥 入庫・棚卸の登録','＋入庫ボタン、棚への資材登録'],
   ['item_create','🆕 新規資材の作成','マスターにない資材の新規登録'],
   ['item_edit','⚙ 資材設定の編集','品名・型番・単位・最低在庫の変更'],
