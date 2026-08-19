@@ -149,6 +149,10 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 .pk{display:flex;gap:9px;align-items:center}
 .pkt{width:42px;height:42px;border-radius:6px;object-fit:cover;flex-shrink:0;border:1px solid var(--line)}
 .pkt-e{width:42px;height:42px;border-radius:6px;border:1px dashed #d3dee9;flex-shrink:0}
+.grphead{display:flex;align-items:center;gap:10px;margin:16px 0 6px;flex-wrap:nowrap}
+.grphead .gtitle{flex:1 1 auto;min-width:0;font-weight:800;color:var(--navy);font-size:.95rem;cursor:pointer}
+.grphead .gmerge{margin-left:auto;flex-shrink:0;padding:7px 14px;font-size:.8rem;white-space:nowrap}
+@media(max-width:700px){.grphead{flex-wrap:wrap}.grphead .gtitle{min-width:230px}.grphead .gmerge{margin-left:0}}
 </style>
 </head>
 <body>
@@ -261,6 +265,8 @@ function render(){
   const h=decodeURIComponent(location.hash.replace('#',''));
   const rp=parseReceiptHash(h);
   if(rp){renderReceipt(rp.id,rp.token);return;}
+  const rg=parseMultiReceiptHash(h);
+  if(rg){renderReceiptGroup(rg);return;}
   if(h==='settings'){if(ISADMIN){renderSettings();window.scrollTo(0,0);}else{location.hash='';}return;}
   if(h==='approvals'){renderApprovals();window.scrollTo(0,0);return;}
   if(h==='newship'){if(!can('ship_create')){toast('権限がありません');location.hash='';return;}renderNewShip();window.scrollTo(0,0);return;}
@@ -1236,10 +1242,10 @@ function shipRowsHtml(){
     const open=GRPOPEN[g.key]===true; // 既定は閉じる
     const sites=[...new Set(g.items.map(s=>s.site).filter(Boolean))];
     const done=g.items.filter(s=>s.status==='received').length;
-    return `<div style="display:flex;align-items:center;gap:10px;margin:16px 0 6px;flex-wrap:wrap">
+    return `<div class="grphead">
         <button class="bset" title="${open?'閉じる':'開く'}" style="width:32px;height:32px;padding:0;font-weight:800;font-size:1.05rem;flex-shrink:0" onclick="toggleGrp('${esc(g.key)}')">${open?'−':'＋'}</button>
-        <div style="flex:1 1 auto;min-width:230px;font-weight:800;color:var(--navy);font-size:.95rem;cursor:pointer" onclick="toggleGrp('${esc(g.key)}')">📁 <span style="color:var(--blue)">${esc(g.key)}</span>　${sites.map(esc).join('・')} <span style="font-size:.75rem;color:var(--gray);font-weight:400">（${g.items.length}箱 ・ 受領済 ${done}/${g.items.length}）</span></div>
-        ${g.items.length>=2?`<button class="bset" style="padding:7px 14px;font-size:.8rem;margin-left:auto" onclick="mergeGroup('${esc(g.key)}')">📑 総括リスト（${g.items.length}箱まとめて）</button>`:''}
+        <div class="gtitle" onclick="toggleGrp('${esc(g.key)}')">📁 <span style="color:var(--blue)">${esc(g.key)}</span>　${sites.map(esc).join('・')} <span style="font-size:.75rem;color:var(--gray);font-weight:400">（${g.items.length}箱 ・ 受領済 ${done}/${g.items.length}）</span></div>
+        ${g.items.length>=2?`<button class="bset gmerge" onclick="mergeGroup('${esc(g.key)}')">📑 総括リスト（${g.items.length}箱まとめて）</button>`:''}
       </div>${open?cards:''}`;
   }).join('');
 }
@@ -1299,13 +1305,7 @@ function renderMerged(ids){
         <td class="ntd">${q} <span style="font-size:.7rem;font-weight:400">${esc(it?.unit||'')}</span></td></tr>`;}).join('');
     const rstate=sp.status==='received'
       ?`<div style="margin:6px 0 2px;padding:8px 12px;background:var(--greenbg);border:1px solid #bfe3cf;border-radius:8px;font-size:.8rem">✅ <b>受領済</b>　受領者 <b>${esc(sp.received_by||'')}</b>${sp.received_tel?'（'+esc(sp.received_tel)+'）':''} ・ ${esc(fmtDT(sp.received_at))}</div>`
-      :(sp.receive_token?`<div class="rqrbox" style="margin:6px 0 2px">
-          <img src="${qrDataUrl(receiptUrl(sp),6,3)}" alt="受領確認QR">
-          <div>
-            <div class="tt">🏷 箱 ${bi+1} の受領確認QR（リストNo. S-${sp.id}）</div>
-            <div class="tx">この箱を受け取られましたら、QRをスマホのカメラで読み取り<b>「✅ 受領確認する」</b>を押してください（ログイン不要）。<br>確認するとこの総括リスト・各出荷リストの両方が「受領済」になります。</div>
-          </div>
-        </div>`:'');
+      :'';
     return `<h3 style="margin:16px 0 6px;font-size:1rem">📦 箱 ${bi+1}／${sps.length} — リストNo. S-${sp.id}
         <span class="badge ${sp.status==='received'?'bg':'ba'}" style="font-size:.68rem">${sp.status==='received'?'受領済':'受領待ち'}</span></h3>
       <table><tr><th style="width:34px">No</th><th style="width:74px">QR</th><th>品名・型番</th><th style="width:104px">数量</th></tr>${rows}</table>
@@ -1333,7 +1333,17 @@ function renderMerged(ids){
       <h3 style="margin:8px 0 6px;font-size:1.05rem">■ 総合計（全${sps.length}箱・計${totalQ}点）</h3>
       <table><tr><th style="width:34px">No</th><th>品名</th><th style="width:104px">合計</th><th style="width:170px">箱内訳</th></tr>${totRows}</table>
       ${boxSections}
-      <div class="foot">※ 資材ごとの小さいQR＝倉庫在庫の確認（要ログイン）／ 枠内の大きいQR＝<b>箱ごと</b>の受領確認（ログイン不要）。受領状況は各出荷リストと自動で連動します。<br>発行: ${todayStr()} ・ 総括リスト（対象: ${sps.map(s=>'S-'+s.id).join('、')}）</div>
+      ${(()=>{const pend=sps.filter(s=>s.status!=='received'&&s.receive_token);
+        if(!pend.length)return `<div style="margin-top:14px;padding:10px 14px;background:var(--greenbg);border:1.5px solid #bfe3cf;border-radius:10px;font-size:.85rem">✅ <b>全${sps.length}箱 受領済み</b>です。</div>`;
+        const toks=sps.filter(s=>s.receive_token);
+        return `<div class="rqrbox">
+          <img src="${qrDataUrl(groupReceiptUrl(toks),5,3)}" alt="受領確認QR（総括）">
+          <div>
+            <div class="tt">📱 受領確認QR（総括・全${sps.length}箱まとめて）</div>
+            <div class="tx">お荷物を受け取られましたら、このQRをスマホのカメラで読み取ってください。<br><b>全${sps.length}箱分の内容物チェックリスト</b>が1画面で開きます（アプリ・ログイン不要）。確認のうえ<b>「✅ 受領確認する」</b>を押すと、全箱がまとめて「受領済」になります。<br>※ 各箱の出荷リストQRから<b>箱ごと</b>に確認することもできます。どちらで確認してもデータは連動します。</div>
+          </div>
+        </div>`;})()}
+      <div class="foot">※ 資材ごとの小さいQR＝倉庫在庫の確認（要ログイン）／ 枠内の大きいQR＝受領確認（ログイン不要）。受領状況は各出荷リスト・総括リストで自動連動します。<br>発行: ${todayStr()} ・ 総括リスト（対象: ${sps.map(s=>'S-'+s.id).join('、')}）</div>
     </div>`;
 }
 function renderShip(sp){
@@ -1603,6 +1613,12 @@ function shipStatusBadge(sp){
 }
 function fmtDT(s){if(!s)return '';const d=new Date(s);return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
 function parseReceiptHash(h){const m=h.match(/^R-(\d+)-([A-Za-z0-9]+)$/);return m?{id:+m[1],token:m[2]}:null;}
+function groupReceiptUrl(sps){return location.origin+location.pathname+'#RG-'+sps.map(s=>s.id+'-'+s.receive_token).join('.');}
+function parseMultiReceiptHash(h){
+  const m=h.match(/^RG-((?:\d+-[A-Za-z0-9]+)(?:\.\d+-[A-Za-z0-9]+)*)$/);
+  if(!m)return null;
+  return m[1].split('.').map(s=>{const i=s.indexOf('-');return {id:+s.slice(0,i),token:s.slice(i+1)};});
+}
 async function renderReceipt(id,token){
   RCPTMODE=true;
   const nav=$('hNav'); if(nav)nav.style.display='none';
@@ -1725,6 +1741,131 @@ window.showReceiptQR=function(sid){
     <div class="mact"><button class="mcancel" onclick="closeMd()">閉じる</button></div>`);
 };
 
+/* ---------- 受領確認（総括・複数箱まとめて） ---------- */
+let RCPTM={list:[],checks:{},name:'',tel:'',note:''};
+async function renderReceiptGroup(parts){
+  RCPTMODE=true;
+  const nav=$('hNav'); if(nav)nav.style.display='none';
+  $('hTitle').textContent='📦 受領確認（総括）';
+  $('hSub').textContent='しろくま電力 購買部';
+  $('app').innerHTML='<div class="loading">読み込み中…</div>';
+  let ds=[];
+  try{
+    ds=await Promise.all(parts.map(p=>api('rpc/qr_receipt_get',{method:'POST',body:JSON.stringify({p_id:p.id,p_token:p.token})}).catch(()=>null)));
+  }catch(e){console.error(e);$('app').innerHTML='<div class="empty">通信エラーです。電波の良い場所で再読み込みしてください。</div>';return;}
+  const list=parts.map((p,i)=>({id:p.id,token:p.token,data:ds[i]})).filter(x=>x.data);
+  if(!list.length){$('app').innerHTML='<div class="empty">このリンクは無効です。<br>出荷元（しろくま電力 購買部）にご確認ください。</div>';return;}
+  const oldIds=RCPTM.list.map(x=>x.id).join('.');
+  if(oldIds!==list.map(x=>x.id).join('.'))RCPTM.checks={};
+  RCPTM.list=list;
+  rcptgRender();
+  window.scrollTo(0,0);
+}
+function rcptgLines(e,readonly){
+  const d=e.data;
+  const ckMap={};
+  if(readonly&&Array.isArray(d.receive_checks))d.receive_checks.forEach(c=>{ckMap[c.item_id]=!!c.checked;});
+  return d.lines.map(l=>{
+    const on=readonly?(Array.isArray(d.receive_checks)?!!ckMap[l.item_id]:true):!!RCPTM.checks[e.id+':'+l.item_id];
+    return `<div class="chkline ${on?'on':''}" ${readonly?'':`onclick="rcptgToggle(${e.id},${l.item_id})"`}>
+      <div class="chkbox">${on?'✓':''}</div>
+      <div class="cn2"><div class="nm">${esc(l.name)}</div><div class="mt">${esc(l.model||'')}${l.loc_code?' ・ '+esc(l.loc_code):''}</div></div>
+      <div class="qy">${l.qty} <small>${esc(l.unit||'')}</small></div>
+    </div>`;
+  }).join('');
+}
+function rcptgRender(){
+  const L=RCPTM.list,N=L.length;
+  const d0=L[0].data;
+  const sites=[...new Set(L.map(e=>e.data.site).filter(Boolean))];
+  const nos=[...new Set(L.map(e=>e.data.site_no).filter(Boolean))];
+  const head=`<div class="card">
+      <div class="iname" style="font-size:1.05rem">📑 総括出荷リスト（全${N}箱）</div>
+      <div class="imeta" style="margin-top:4px">📍 案件 <b>${sites.map(esc).join(' / ')}</b>${nos.length?` ・ 🔢 案件番号 <b>${nos.map(esc).join(' / ')}</b>`:''}</div>
+      <div class="imeta">対象: ${L.map(e=>'S-'+e.id).join('、')} ・ 発行: しろくま電力 購買部</div>
+    </div>`;
+  const pend=L.filter(e=>e.data.status!=='received');
+  const boxSec=L.map((e,i)=>{
+    const d=e.data;
+    if(d.status==='received'){
+      return `<h2>📦 箱 ${i+1}／${N} — S-${e.id} <span class="badge bg" style="font-size:.68rem">受領済</span></h2>
+        <div class="card" style="background:var(--greenbg);border-color:#bfe3cf;font-size:.83rem;padding:10px 14px">✅ 受領者 <b>${esc(d.received_by||'')}</b>${d.received_tel?'（'+esc(d.received_tel)+'）':''} ・ ${esc(fmtDT(d.received_at))}</div>`;
+    }
+    const done=d.lines.filter(l=>RCPTM.checks[e.id+':'+l.item_id]).length;
+    return `<h2>📦 箱 ${i+1}／${N} — S-${e.id}（${done}/${d.lines.length}）</h2>
+      <div class="card" style="padding:2px 12px">${rcptgLines(e,false)}</div>`;
+  }).join('');
+  if(!pend.length){
+    $('app').innerHTML=`
+      <div class="rcptok"><div class="big">✅</div><h2>全${N}箱 受領確認 済み</h2></div>
+      ${head}${boxSec}
+      <div class="cap" style="text-align:center">この画面は閉じて構いません。ご協力ありがとうございました。</div>`;
+    return;
+  }
+  const total=pend.reduce((s,e)=>s+e.data.lines.length,0);
+  const done=pend.reduce((s,e)=>s+e.data.lines.filter(l=>RCPTM.checks[e.id+':'+l.item_id]).length,0);
+  $('app').innerHTML=`
+    <div class="card" style="background:var(--sky);border-color:#c3d9ec">
+      <b style="font-size:.92rem">🙏 現場担当者様へ（全${N}箱まとめて確認）</b>
+      <div style="font-size:.83rem;margin-top:4px;line-height:1.65">お荷物のご確認をお願いします。<br>① 箱ごとのリストと実物を照合し、品目ごとにタップでチェック ✓<br>② お名前を確認・入力して「受領確認」ボタンを押すと、<b>未受領の${pend.length}箱がまとめて受領済</b>になります。</div>
+    </div>
+    ${head}${boxSec}
+    <button class="baddbig" style="margin-top:0" onclick="rcptgAll()">${done<total?'✔ すべてまとめてチェック':'✖ チェックをすべて外す'}</button>
+    <div class="card">
+      <label style="font-size:.78rem;color:var(--gray)">お名前（必須）— 入力すると候補が出ます。リストにない方はそのまま入力OK</label>
+      <input id="rgName" list="rgDL" value="${esc(RCPTM.name||d0.recipient_name||'')}" placeholder="例: 染谷" autocomplete="off" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="rcptgRecipInput(this.value)">
+      <datalist id="rgDL">${(d0.recipients||[]).map(r=>`<option value="${esc(r.name)}">`).join('')}</datalist>
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">携帯番号（任意・候補から選ぶと自動入力）</label>
+      <input id="rgTel" value="${esc(RCPTM.tel||d0.recipient_tel||'')}" placeholder="例: 090-0000-0000" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="RCPTM.tel=this.value">
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">メモ（数量違い・破損などがあれば記入）</label>
+      <input id="rgNote" value="${esc(RCPTM.note||'')}" placeholder="例: ○○が1個不足" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="RCPTM.note=this.value">
+    </div>
+    <button class="shipbtn" style="background:var(--green);font-size:1.05rem;padding:15px" onclick="rcptgSubmit()">✅ 受領確認する（${pend.length}箱・${done}/${total} 確認済み）</button>
+    <div class="cap" style="text-align:center">押すと出荷元に「受領済み」として記録されます（各出荷リストにも反映）</div>`;
+}
+function keepRcptgInputs(){
+  if($('rgName'))RCPTM.name=$('rgName').value;
+  if($('rgTel'))RCPTM.tel=$('rgTel').value;
+  if($('rgNote'))RCPTM.note=$('rgNote').value;
+}
+window.rcptgToggle=function(sid,iid){RCPTM.checks[sid+':'+iid]=!RCPTM.checks[sid+':'+iid];keepRcptgInputs();rcptgRender();};
+window.rcptgAll=function(){
+  const pend=RCPTM.list.filter(e=>e.data.status!=='received');
+  const all=pend.every(e=>e.data.lines.every(l=>RCPTM.checks[e.id+':'+l.item_id]));
+  pend.forEach(e=>e.data.lines.forEach(l=>{RCPTM.checks[e.id+':'+l.item_id]=!all;}));
+  keepRcptgInputs();rcptgRender();
+};
+window.rcptgRecipInput=function(v){
+  RCPTM.name=v;
+  const r=(RCPTM.list[0].data.recipients||[]).find(x=>x.name===v);
+  if(r){RCPTM.tel=r.tel||'';const t=$('rgTel');if(t)t.value=RCPTM.tel;}
+};
+window.rcptgSubmit=async function(){
+  keepRcptgInputs();
+  const name=(RCPTM.name||'').trim();
+  if(!name){toast('お名前を入力してください');$('rgName')?.focus();return;}
+  const pend=RCPTM.list.filter(e=>e.data.status!=='received');
+  const unchecked=pend.reduce((s,e)=>s+e.data.lines.filter(l=>!RCPTM.checks[e.id+':'+l.item_id]).length,0);
+  if(unchecked&&!(RCPTM.note||'').trim()){
+    toast('未チェックの品目があります。全てチェックするか、メモに理由をご記入ください');return;
+  }
+  const msg=unchecked
+    ?`未チェック ${unchecked}品目あり（メモ記入済み）。\n未受領の${pend.length}箱をまとめて受領確認しますか？`
+    :`全品目を確認しました。\n未受領の${pend.length}箱をまとめて受領確認しますか？`;
+  if(!confirm(msg))return;
+  let ok=0,fail=0;
+  for(const e of pend){
+    const checks=e.data.lines.map(l=>({item_id:l.item_id,name:l.name,qty:l.qty,unit:l.unit,checked:!!RCPTM.checks[e.id+':'+l.item_id]}));
+    try{
+      const r=await api('rpc/qr_receipt_confirm',{method:'POST',body:JSON.stringify({
+        p_id:e.id,p_token:e.token,p_name:name,p_tel:(RCPTM.tel||'').trim(),p_note:(RCPTM.note||'').trim(),p_checks:checks})});
+      if(r&&(r.ok||r.error==='already'))ok++; else fail++;
+    }catch(err){fail++;console.error(err);}
+  }
+  toast(fail?`受領確認: ${ok}箱 成功 ・ ${fail}箱 失敗。再読み込みしてご確認ください`:`全${ok}箱の受領確認を送信しました`);
+  await renderReceiptGroup(RCPTM.list.map(e=>({id:e.id,token:e.token})));
+};
+
 /* ---------- 認証（Googleログイン + 承認制アクセス） ---------- */
 async function rpcBool(fn){
   try{const r=await fetch(URL0+'rpc/'+fn,{method:'POST',headers:H,body:'{}'});
@@ -1762,12 +1903,13 @@ window.doLogout=async function(){await sb.auth.signOut();localStorage.removeItem
 /* ---------- boot ---------- */
 window.addEventListener('hashchange',()=>{
   const h=decodeURIComponent(location.hash.replace('#',''));
-  const p=parseReceiptHash(h);
+  const p=parseReceiptHash(h),pg=parseMultiReceiptHash(h);
   if(p&&!READY){renderReceipt(p.id,p.token);return;}
+  if(pg&&!READY){renderReceiptGroup(pg);return;}
   if(READY){render();return;}
   // 受領画面（RCPTMODE）から他画面へ移動した時だけ通常起動に戻す。
   // ※ OAuthコールバックのハッシュ除去でここが発火してもリロードしない（ログインループ防止）
-  if(RCPTMODE&&!p)location.reload();
+  if(RCPTMODE&&!p&&!pg)location.reload();
 });
 sb.auth.onAuthStateChange((ev,sess)=>{if(sess){H.Authorization='Bearer '+sess.access_token;}});
 (async()=>{
@@ -1776,6 +1918,8 @@ sb.auth.onAuthStateChange((ev,sess)=>{if(sess){H.Authorization='Bearer '+sess.ac
     const h0=decodeURIComponent(location.hash.replace('#',''));
     const p0=parseReceiptHash(h0);
     if(p0){renderReceipt(p0.id,p0.token);return;}
+    const pg0=parseMultiReceiptHash(h0);
+    if(pg0){renderReceiptGroup(pg0);return;}
     const {data}=await sb.auth.getSession(); SESSION=data.session;
     if(!SESSION){renderLogin();return;}
     H.Authorization='Bearer '+SESSION.access_token;
