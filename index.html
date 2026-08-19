@@ -1208,23 +1208,44 @@ window.submitShip=async function(){
   }catch(e){toast('エラー: 発行できませんでした');console.error(e);}
 };
 let SHIPQ='';
+function shipCardHtml(sp){
+  const txs=TX.filter(t=>t.shipment_id===sp.id);
+  const agg={}; txs.forEach(t=>{agg[t.item_id]=(agg[t.item_id]||0)+(-Number(t.qty));});
+  const items=Object.entries(agg);
+  const totalQ=items.reduce((a,[,v])=>a+v,0);
+  const summary=items.slice(0,3).map(([iid,v])=>{const it=itemById(+iid);return esc((it?.name||'').slice(0,14))+'×'+v;}).join('、');
+  return `<div class="card" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">
+    <div class="itemrow"><input type="checkbox" ${MSEL.has(sp.id)?'checked':''} title="まとめリストに含める" style="width:22px;height:22px;flex-shrink:0;accent-color:#16324f;cursor:pointer" onclick="event.stopPropagation()" onchange="toggleMsel(${sp.id},this.checked)"><div style="flex:1">
+      <div class="iname">📄 ${sp.site_no?`<span style="color:var(--blue)">${esc(sp.site_no)}</span>　`:''}${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）　${esc(sp.site)}</div>
+      <div class="imeta">${items.length}品目・計${totalQ}点 ${summary?'｜ '+summary+(items.length>3?' …':''):''}</div>
+      <div class="imeta">担当 ${esc(sp.created_by||'—')}${sp.recipient_name?' ・ 現場 '+esc(sp.recipient_name):''} ・ リストNo. S-${sp.id}</div>
+    </div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${shipStatusBadge(sp)}<span class="badge bn">開く ›</span>${can('ship_delete')?`<button class="bset" style="padding:4px 10px;font-size:.72rem;color:var(--red)" onclick="delShip(${sp.id},event)">🗑 削除</button>`:''}</div></div></div>`;
+}
 function shipRowsHtml(){
   const q=SHIPQ.toLowerCase();
-  const list=SHIPS.filter(sp=>!q||(sp.site||'').toLowerCase().includes(q)||(sp.ship_date||'').includes(q)||(sp.recipient_name||'').toLowerCase().includes(q));
-  return list.map(sp=>{
-    const txs=TX.filter(t=>t.shipment_id===sp.id);
-    const agg={}; txs.forEach(t=>{agg[t.item_id]=(agg[t.item_id]||0)+(-Number(t.qty));});
-    const items=Object.entries(agg);
-    const totalQ=items.reduce((a,[,v])=>a+v,0);
-    const summary=items.slice(0,3).map(([iid,v])=>{const it=itemById(+iid);return esc((it?.name||'').slice(0,14))+'×'+v;}).join('、');
-    return `<div class="card" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">
-      <div class="itemrow"><input type="checkbox" ${MSEL.has(sp.id)?'checked':''} title="まとめリストに含める" style="width:22px;height:22px;flex-shrink:0;accent-color:#16324f;cursor:pointer" onclick="event.stopPropagation()" onchange="toggleMsel(${sp.id},this.checked)"><div style="flex:1">
-        <div class="iname">📄 ${sp.site_no?`<span style="color:var(--blue)">${esc(sp.site_no)}</span>　`:''}${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）　${esc(sp.site)}</div>
-        <div class="imeta">${items.length}品目・計${totalQ}点 ${summary?'｜ '+summary+(items.length>3?' …':''):''}</div>
-        <div class="imeta">担当 ${esc(sp.created_by||'—')}${sp.recipient_name?' ・ 現場 '+esc(sp.recipient_name):''} ・ リストNo. S-${sp.id}</div>
-      </div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${shipStatusBadge(sp)}<span class="badge bn">開く ›</span>${can('ship_delete')?`<button class="bset" style="padding:4px 10px;font-size:.72rem;color:var(--red)" onclick="delShip(${sp.id},event)">🗑 削除</button>`:''}</div></div></div>`;
-  }).join('')||'<div class="empty">該当する出荷履歴がありません</div>';
+  const list=SHIPS.filter(sp=>!q||(sp.site||'').toLowerCase().includes(q)||(sp.ship_date||'').includes(q)||(sp.recipient_name||'').toLowerCase().includes(q)||(sp.site_no||'').toLowerCase().includes(q));
+  if(!list.length)return '<div class="empty">該当する出荷履歴がありません</div>';
+  // 案件番号ごとに自動グループ化（番号なしはそのまま個別表示）
+  const groups=[],gmap={};
+  list.forEach(sp=>{const k=sp.site_no||'';
+    if(!gmap[k]){gmap[k]={key:k,items:[]};groups.push(gmap[k]);}
+    gmap[k].items.push(sp);});
+  return groups.map(g=>{
+    const cards=g.items.map(shipCardHtml).join('');
+    if(!g.key)return cards;
+    const sites=[...new Set(g.items.map(s=>s.site).filter(Boolean))];
+    const done=g.items.filter(s=>s.status==='received').length;
+    return `<div style="display:flex;align-items:center;gap:10px;margin:16px 0 6px;flex-wrap:wrap">
+        <div style="font-weight:800;color:var(--navy);font-size:.95rem">📁 <span style="color:var(--blue)">${esc(g.key)}</span>　${sites.map(esc).join('・')} <span style="font-size:.75rem;color:var(--gray);font-weight:400">（${g.items.length}箱 ・ 受領済 ${done}/${g.items.length}）</span></div>
+        ${g.items.length>=2?`<button class="bset" style="padding:7px 14px;font-size:.8rem" onclick="mergeGroup('${esc(g.key)}')">📑 総括リスト（${g.items.length}箱まとめて）</button>`:''}
+      </div>${cards}`;
+  }).join('');
 }
+window.mergeGroup=function(no){
+  const ids=SHIPS.filter(s=>(s.site_no||'')===no).map(s=>s.id).sort((a,b)=>a-b);
+  if(ids.length<2){toast('この案件番号の出荷は1件のみです');return;}
+  location.hash='M-'+ids.join('.');
+};
 function renderShips(){
   $('hTitle').textContent='🚚 出荷履歴';
   $('app').innerHTML=`
