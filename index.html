@@ -1233,19 +1233,19 @@ function shipRowsHtml(){
   return groups.map(g=>{
     const cards=g.items.map(shipCardHtml).join('');
     if(!g.key)return cards;
-    const open=GRPOPEN[g.key]!==false; // 既定は展開
+    const open=GRPOPEN[g.key]===true; // 既定は閉じる
     const sites=[...new Set(g.items.map(s=>s.site).filter(Boolean))];
     const done=g.items.filter(s=>s.status==='received').length;
     return `<div style="display:flex;align-items:center;gap:10px;margin:16px 0 6px;flex-wrap:wrap">
         <button class="bset" title="${open?'閉じる':'開く'}" style="width:32px;height:32px;padding:0;font-weight:800;font-size:1.05rem;flex-shrink:0" onclick="toggleGrp('${esc(g.key)}')">${open?'−':'＋'}</button>
-        <div style="font-weight:800;color:var(--navy);font-size:.95rem;cursor:pointer" onclick="toggleGrp('${esc(g.key)}')">📁 <span style="color:var(--blue)">${esc(g.key)}</span>　${sites.map(esc).join('・')} <span style="font-size:.75rem;color:var(--gray);font-weight:400">（${g.items.length}箱 ・ 受領済 ${done}/${g.items.length}）</span></div>
-        ${g.items.length>=2?`<button class="bset" style="padding:7px 14px;font-size:.8rem" onclick="mergeGroup('${esc(g.key)}')">📑 総括リスト（${g.items.length}箱まとめて）</button>`:''}
+        <div style="flex:1 1 auto;min-width:230px;font-weight:800;color:var(--navy);font-size:.95rem;cursor:pointer" onclick="toggleGrp('${esc(g.key)}')">📁 <span style="color:var(--blue)">${esc(g.key)}</span>　${sites.map(esc).join('・')} <span style="font-size:.75rem;color:var(--gray);font-weight:400">（${g.items.length}箱 ・ 受領済 ${done}/${g.items.length}）</span></div>
+        ${g.items.length>=2?`<button class="bset" style="padding:7px 14px;font-size:.8rem;margin-left:auto" onclick="mergeGroup('${esc(g.key)}')">📑 総括リスト（${g.items.length}箱まとめて）</button>`:''}
       </div>${open?cards:''}`;
   }).join('');
 }
 let GRPOPEN={};
 window.toggleGrp=function(k){
-  GRPOPEN[k]=(GRPOPEN[k]===false);
+  GRPOPEN[k]=!(GRPOPEN[k]===true);
   const el=$('shipList'); if(el)el.innerHTML=shipRowsHtml();
 };
 window.mergeGroup=function(no){
@@ -1291,12 +1291,25 @@ function renderMerged(ids){
       agg[k].qty+=q; agg[k].det.push('箱'+(bi+1)+'×'+q); totalQ+=q;
     });
     const rows=Object.entries(a).map(([iid,q],idx)=>{const it=itemById(+iid);
+      const code=it?.item_code||('id'+iid);
+      const img=qrDataUrl(location.origin+location.pathname+'#I-'+encodeURIComponent(code),4,2);
       return `<tr><td class="ntd" style="width:34px;font-weight:400">${idx+1}</td>
-        <td><b>${esc(it?.name||'')}</b>${it?.loc_code?` <span style="font-size:.72rem;color:#475569">[${esc(it.loc_code)}]</span>`:''}</td>
+        <td class="qtd"><img src="${img}" style="width:54px;height:54px;image-rendering:pixelated"><div style="font-size:.62rem;font-weight:700">${esc(it?.loc_code||code)}</div></td>
+        <td><b>${esc(it?.name||'')}</b>${it?.model?`<div style="font-size:.75rem;color:#475569">${esc(it.model)}</div>`:''}</td>
         <td class="ntd">${q} <span style="font-size:.7rem;font-weight:400">${esc(it?.unit||'')}</span></td></tr>`;}).join('');
+    const rstate=sp.status==='received'
+      ?`<div style="margin:6px 0 2px;padding:8px 12px;background:var(--greenbg);border:1px solid #bfe3cf;border-radius:8px;font-size:.8rem">✅ <b>受領済</b>　受領者 <b>${esc(sp.received_by||'')}</b>${sp.received_tel?'（'+esc(sp.received_tel)+'）':''} ・ ${esc(fmtDT(sp.received_at))}</div>`
+      :(sp.receive_token?`<div class="rqrbox" style="margin:6px 0 2px">
+          <img src="${qrDataUrl(receiptUrl(sp),6,3)}" alt="受領確認QR">
+          <div>
+            <div class="tt">🏷 箱 ${bi+1} の受領確認QR（リストNo. S-${sp.id}）</div>
+            <div class="tx">この箱を受け取られましたら、QRをスマホのカメラで読み取り<b>「✅ 受領確認する」</b>を押してください（ログイン不要）。<br>確認するとこの総括リスト・各出荷リストの両方が「受領済」になります。</div>
+          </div>
+        </div>`:'');
     return `<h3 style="margin:16px 0 6px;font-size:1rem">📦 箱 ${bi+1}／${sps.length} — リストNo. S-${sp.id}
         <span class="badge ${sp.status==='received'?'bg':'ba'}" style="font-size:.68rem">${sp.status==='received'?'受領済':'受領待ち'}</span></h3>
-      <table><tr><th style="width:34px">No</th><th>品名</th><th style="width:104px">数量</th></tr>${rows}</table>`;
+      <table><tr><th style="width:34px">No</th><th style="width:74px">QR</th><th>品名・型番</th><th style="width:104px">数量</th></tr>${rows}</table>
+      ${rstate}`;
   }).join('');
   const totRows=Object.entries(agg).map(([iid,v],i)=>{const it=itemById(+iid);
     return `<tr><td class="ntd" style="width:34px;font-weight:400">${i+1}</td>
@@ -1320,7 +1333,7 @@ function renderMerged(ids){
       <h3 style="margin:8px 0 6px;font-size:1.05rem">■ 総合計（全${sps.length}箱・計${totalQ}点）</h3>
       <table><tr><th style="width:34px">No</th><th>品名</th><th style="width:104px">合計</th><th style="width:170px">箱内訳</th></tr>${totRows}</table>
       ${boxSections}
-      <div class="foot">※ 受領確認は、各箱に同梱・貼付された出荷リストのQRコードから<b>箱ごと</b>に行ってください。<br>発行: ${todayStr()} ・ 総括リスト（対象: ${sps.map(s=>'S-'+s.id).join('、')}）</div>
+      <div class="foot">※ 資材ごとの小さいQR＝倉庫在庫の確認（要ログイン）／ 枠内の大きいQR＝<b>箱ごと</b>の受領確認（ログイン不要）。受領状況は各出荷リストと自動で連動します。<br>発行: ${todayStr()} ・ 総括リスト（対象: ${sps.map(s=>'S-'+s.id).join('、')}）</div>
     </div>`;
 }
 function renderShip(sp){
