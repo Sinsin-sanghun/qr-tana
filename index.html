@@ -27,7 +27,7 @@ header a{color:#cfe3f5;font-size:.78rem;text-decoration:none}
 .iunit{font-size:.7rem;color:var(--gray);text-align:right}
 .badge{border-radius:12px;padding:2px 10px;font-size:.72rem;font-weight:700;white-space:nowrap}
 .bg{background:var(--greenbg);color:var(--green)}.ba{background:var(--amberbg);color:var(--amber)}
-.br{background:var(--redbg);color:var(--red)}.bn{background:#e2e8f0;color:#475569}
+.br{background:var(--redbg);color:var(--red)}.bn{background:#e2e8f0;color:#475569}.bu{background:#e3ecfb;color:#2458a6}
 .subline{font-size:.72rem;color:var(--gray);margin-top:4px}
 .btnrow{display:flex;gap:8px;margin-top:8px}
 button{border:none;border-radius:9px;font-weight:700;cursor:pointer;font-family:inherit}
@@ -373,7 +373,7 @@ function renderDash(){
   $('app').innerHTML=`
     <div class="chips"><span class="chip cr">🚨 不足 ${nR}</span><span class="chip ca">⚠️ 注意 ${nA}</span><span class="chip cg">✅ 十分 ${nG}</span><span class="chip cn">棚 ${SHELVES.length}</span><span class="chip cn" style="cursor:pointer" onclick="doLogout()">👤 ${esc(MENAME)}｜ログアウト</span></div>
     ${can('ship_create')?`<button class="shipbtn" onclick="NEWSHIP=null;location.hash='newship'">🚚 出荷リストを作成（現場へ資材を送る）</button>`:''}
-    ${SHIPS.length?`<h2>最近の出荷</h2><div class="card">${SHIPS.slice(0,5).map(sp=>`<div class="hist" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">${sp.status==='received'?'✅':'🟡'} ${sp.site_no?esc(sp.site_no)+' ':''}${esc(sp.ship_date)} ${esc(sp.site)}${sp.status==='received'?` <span style="color:var(--green);font-weight:700">受領済</span>`:` <span style="color:var(--amber);font-weight:700">受領待ち</span>`} <span style="color:var(--blue)">［リストを開く］</span></div>`).join('')}</div>`:''}
+    ${SHIPS.length?`<h2>最近の出荷</h2><div class="card">${SHIPS.slice(0,5).map(sp=>`<div class="hist" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">${sp.used_at?'🧰':sp.status==='received'?'✅':'🟡'} ${sp.site_no?esc(sp.site_no)+' ':''}${esc(sp.ship_date)} ${esc(sp.site)}${sp.used_at?` <span style="color:#2458a6;font-weight:700">使用完了</span>`:sp.status==='received'?` <span style="color:var(--green);font-weight:700">受領済</span>`:` <span style="color:var(--amber);font-weight:700">受領待ち</span>`} <span style="color:var(--blue)">［リストを開く］</span></div>`).join('')}</div>`:''}
     <h2>棚一覧（実際のラック配置 ・ 段をタップで棚ページへ）</h2><div class="rackwrap">${shelfHtml}</div>
     <h2>要対応（不足・注意）</h2>${shortHtml}
     <h2>最近の記録</h2><div class="card">${recent}</div>`;
@@ -1242,9 +1242,10 @@ function shipRowsHtml(){
     const open=GRPOPEN[g.key]===true; // 既定は閉じる
     const sites=[...new Set(g.items.map(s=>s.site).filter(Boolean))];
     const done=g.items.filter(s=>s.status==='received').length;
+    const usedN=g.items.filter(s=>s.used_at).length;
     return `<div class="grphead">
         <button class="bset" title="${open?'閉じる':'開く'}" style="width:32px;height:32px;padding:0;font-weight:800;font-size:1.05rem;flex-shrink:0" onclick="toggleGrp('${esc(g.key)}')">${open?'−':'＋'}</button>
-        <div class="gtitle" onclick="toggleGrp('${esc(g.key)}')">📁 <span style="color:var(--blue)">${esc(g.key)}</span>　${sites.map(esc).join('・')} <span style="font-size:.75rem;color:var(--gray);font-weight:400">（${g.items.length}箱 ・ 受領済 ${done}/${g.items.length}）</span></div>
+        <div class="gtitle" onclick="toggleGrp('${esc(g.key)}')">📁 <span style="color:var(--blue)">${esc(g.key)}</span>　${sites.map(esc).join('・')} <span style="font-size:.75rem;color:var(--gray);font-weight:400">（${g.items.length}箱 ・ 受領済 ${done}/${g.items.length}${usedN?` ・ 使用完了 ${usedN}/${g.items.length}`:''}）</span></div>
         ${g.items.length>=2?`<button class="bset gmerge" onclick="mergeGroup('${esc(g.key)}')">📑 総括リスト（${g.items.length}箱まとめて）</button>`:''}
       </div>${open?cards:''}`;
   }).join('');
@@ -1303,11 +1304,14 @@ function renderMerged(ids){
         <td class="qtd"><img src="${img}" style="width:54px;height:54px;image-rendering:pixelated"><div style="font-size:.62rem;font-weight:700">${esc(it?.loc_code||code)}</div></td>
         <td><b>${esc(it?.name||'')}</b>${it?.model?`<div style="font-size:.75rem;color:#475569">${esc(it.model)}</div>`:''}</td>
         <td class="ntd">${q} <span style="font-size:.7rem;font-weight:400">${esc(it?.unit||'')}</span></td></tr>`;}).join('');
-    const rstate=sp.status==='received'
+    const leftS=useLeftSummary(sp);
+    const rstate=(sp.status==='received'
       ?`<div style="margin:6px 0 2px;padding:8px 12px;background:var(--greenbg);border:1px solid #bfe3cf;border-radius:8px;font-size:.8rem">✅ <b>受領済</b>　受領者 <b>${esc(sp.received_by||'')}</b>${sp.received_tel?'（'+esc(sp.received_tel)+'）':''} ・ ${esc(fmtDT(sp.received_at))}</div>`
-      :'';
+      :'')+(sp.used_at
+      ?`<div style="margin:4px 0 2px;padding:8px 12px;background:#e3ecfb;border:1px solid #c3d9ec;border-radius:8px;font-size:.8rem">🧰 <b>使用完了</b>　報告者 <b>${esc(sp.used_by||'')}</b> ・ ${esc(fmtDT(sp.used_at))}　${leftS?`<b style="color:var(--red)">残あり: ${leftS}</b>`:'残なし（全て使用）'}${sp.use_note?`　📝 ${esc(sp.use_note)}`:''}</div>`
+      :'');
     return `<h3 style="margin:16px 0 6px;font-size:1rem">📦 箱 ${bi+1}／${sps.length} — リストNo. S-${sp.id}
-        <span class="badge ${sp.status==='received'?'bg':'ba'}" style="font-size:.68rem">${sp.status==='received'?'受領済':'受領待ち'}</span></h3>
+        <span class="badge ${sp.used_at?'bu':sp.status==='received'?'bg':'ba'}" style="font-size:.68rem">${sp.used_at?'使用完了':sp.status==='received'?'受領済':'受領待ち'}</span></h3>
       <table><tr><th style="width:34px">No</th><th style="width:74px">QR</th><th>品名・型番</th><th style="width:104px">数量</th></tr>${rows}</table>
       ${rstate}`;
   }).join('');
@@ -1333,14 +1337,19 @@ function renderMerged(ids){
       <h3 style="margin:8px 0 6px;font-size:1.05rem">■ 総合計（全${sps.length}箱・計${totalQ}点）</h3>
       <table><tr><th style="width:34px">No</th><th>品名</th><th style="width:104px">合計</th><th style="width:170px">箱内訳</th></tr>${totRows}</table>
       ${boxSections}
-      ${(()=>{const pend=sps.filter(s=>s.status!=='received'&&s.receive_token);
-        if(!pend.length)return `<div style="margin-top:14px;padding:10px 14px;background:var(--greenbg);border:1.5px solid #bfe3cf;border-radius:10px;font-size:.85rem">✅ <b>全${sps.length}箱 受領済み</b>です。</div>`;
-        const toks=sps.filter(s=>s.receive_token);
+      ${(()=>{const toks=sps.filter(s=>s.receive_token);
+        if(!toks.length)return '';
+        const pend=sps.filter(s=>s.status!=='received'&&s.receive_token);
+        const unused=sps.filter(s=>s.status==='received'&&!s.used_at);
+        if(!pend.length&&!unused.length)return `<div style="margin-top:14px;padding:10px 14px;background:var(--greenbg);border:1.5px solid #bfe3cf;border-radius:10px;font-size:.85rem">✅ <b>全${sps.length}箱 受領済・使用完了</b>です。</div>`;
+        const usageMode=!pend.length;
         return `<div class="rqrbox">
           <img src="${qrDataUrl(groupReceiptUrl(toks),5,3)}" alt="受領確認QR（総括）">
           <div>
-            <div class="tt">📱 受領確認QR（総括・全${sps.length}箱まとめて）</div>
-            <div class="tx">お荷物を受け取られましたら、このQRをスマホのカメラで読み取ってください。<br><b>全${sps.length}箱分の内容物チェックリスト</b>が1画面で開きます（アプリ・ログイン不要）。確認のうえ<b>「✅ 受領確認する」</b>を押すと、全箱がまとめて「受領済」になります。<br>※ 各箱の出荷リストQRから<b>箱ごと</b>に確認することもできます。どちらで確認してもデータは連動します。</div>
+            <div class="tt">📱 ${usageMode?'使用報告QR':'受領確認QR'}（総括・全${sps.length}箱まとめて）</div>
+            <div class="tx">${usageMode
+              ?`資材を使い終わりましたら、このQRをスマホのカメラで読み取ってください（アプリ・ログイン不要）。<br><b>「✅ すべて使用しました」</b>ボタン、または残った資材の数量入力で<b>使用報告</b>ができます。`
+              :`お荷物を受け取られましたら、このQRをスマホのカメラで読み取ってください。<br><b>全${sps.length}箱分の内容物チェックリスト</b>が1画面で開きます（アプリ・ログイン不要）。確認のうえ<b>「✅ 受領確認する」</b>を押すと、全箱がまとめて「受領済」になります。<br>受領後は同じQRから<b>使用報告</b>（すべて使用／残数入力）もできます。`}<br>※ 各箱の出荷リストQRから<b>箱ごと</b>に行うこともできます。どちらで行ってもデータは連動します。</div>
           </div>
         </div>`;})()}
       <div class="foot">※ 資材ごとの小さいQR＝倉庫在庫の確認（要ログイン）／ 枠内の大きいQR＝受領確認（ログイン不要）。受領状況は各出荷リスト・総括リストで自動連動します。<br>発行: ${todayStr()} ・ 総括リスト（対象: ${sps.map(s=>'S-'+s.id).join('、')}）</div>
@@ -1371,8 +1380,11 @@ function renderShip(sp){
           <div class="iname">✅ 現場で受領確認済み</div>
           <div class="imeta">受領者 <b>${esc(sp.received_by||'')}</b>${sp.received_tel?'（'+esc(sp.received_tel)+'）':''} ・ ${esc(fmtDT(sp.received_at))}</div>
           ${sp.receive_note?`<div class="subline">📝 ${esc(sp.receive_note)}</div>`:''}
-        </div><span class="badge bg">受領済</span></div>
+        </div>${sp.used_at?'<span class="badge bu">使用完了</span>':'<span class="badge bg">受領済</span>'}</div>
         ${ng.length?`<div style="margin-top:6px;font-size:.8rem;color:var(--red)"><b>⚠️ 未確認・問題あり:</b> ${ng.map(c=>esc(c.name)+'×'+c.qty).join('、')}</div>`:''}
+        ${sp.used_at
+          ?`<div style="margin-top:6px;padding:7px 10px;background:#e3ecfb;border-radius:8px;font-size:.8rem">🧰 <b>使用完了</b>　報告者 <b>${esc(sp.used_by||'')}</b> ・ ${esc(fmtDT(sp.used_at))}<br>${useLeftSummary(sp)?`<b style="color:var(--red)">残あり: ${useLeftSummary(sp)}</b>　→ 返却・次回出荷量の見直し要検討`:'残なし（全て使用）'}${sp.use_note?`<br>📝 ${esc(sp.use_note)}`:''}</div>`
+          :`<div style="margin-top:6px;font-size:.78rem;color:var(--gray)">🧰 使用報告 待ち — 現場が同じ受領QRから「すべて使用／残数入力」を報告できます</div>`}
       </div>`
     :`<div class="card noprint" style="background:var(--amberbg);border-color:#eeddb5">
         <div class="itemrow"><div style="flex:1">
@@ -1609,7 +1621,13 @@ function receiptUrl(sp){return location.origin+location.pathname+'#R-'+sp.id+'-'
 function qrDataUrl(url,cell,margin){const q=qrcode(0,'M');q.addData(url);q.make();return q.createDataURL(cell||4,margin==null?2:margin);}
 function shipStatusBadge(sp){
   if(!sp||!sp.receive_token)return '';
+  if(sp.used_at)return '<span class="badge bu">🧰 使用完了</span>';
   return sp.status==='received'?'<span class="badge bg">✅ 受領済</span>':'<span class="badge ba">🟡 受領待ち</span>';
+}
+function useLeftSummary(sp){
+  const uc=Array.isArray(sp.use_checks)?sp.use_checks:[];
+  const left=uc.filter(c=>Number(c.left)>0);
+  return left.length?left.map(c=>esc(c.name)+'×'+c.left+(c.unit?esc(c.unit):'')).join('、'):'';
 }
 function fmtDT(s){if(!s)return '';const d=new Date(s);return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
 function parseReceiptHash(h){const m=h.match(/^R-(\d+)-([A-Za-z0-9]+)$/);return m?{id:+m[1],token:m[2]}:null;}
@@ -1629,7 +1647,7 @@ async function renderReceipt(id,token){
   try{d=await api('rpc/qr_receipt_get',{method:'POST',body:JSON.stringify({p_id:id,p_token:token})});}
   catch(e){console.error(e);$('app').innerHTML='<div class="empty">通信エラーです。電波の良い場所で再読み込みしてください。</div>';return;}
   if(!d){$('app').innerHTML='<div class="empty">このリンクは無効です。<br>出荷元（しろくま電力 購買部）にご確認ください。</div>';return;}
-  if(RCPT.id!==id){RCPT.checks={};}
+  if(RCPT.id!==id){RCPT.checks={};RCPT.usePart=false;RCPT.uleft={};RCPT.uname=null;RCPT.unote='';}
   RCPT.id=id;RCPT.token=token;RCPT.data=d;
   rcptRender();
   window.scrollTo(0,0);
@@ -1665,6 +1683,7 @@ function rcptRender(){
       <h2>内容物（${d.lines.length}品目）</h2><div class="card" style="padding:2px 12px">${rcptLinesHtml(true)}</div>
       ${ng.length?`<div class="card warn"><b style="color:var(--red)">⚠️ 未確認・問題ありの品目</b>${ng.map(c=>`<div class="hist">${esc(c.name)} × ${c.qty}</div>`).join('')}</div>`:''}
       ${d.receive_note?`<div class="card"><b style="font-size:.85rem">📝 メモ</b><div style="font-size:.85rem;margin-top:4px">${esc(d.receive_note)}</div></div>`:''}
+      ${usageSectionHtml(d)}
       <div class="cap" style="text-align:center">この画面は閉じて構いません。ご協力ありがとうございました。</div>`;
     return;
   }
@@ -1729,6 +1748,94 @@ window.rcptSubmit=async function(){
     else{toast('エラー: 送信できませんでした');}
   }catch(e){toast('通信エラー: もう一度お試しください');console.error(e);}
 };
+
+/* ---------- 使用報告（現場・受領後） ---------- */
+function usageDoneHtml(d){
+  const uc=Array.isArray(d.use_checks)?d.use_checks:[];
+  const left=uc.filter(c=>Number(c.left)>0);
+  return `<div class="card" style="background:#e3ecfb;border-color:#c3d9ec">
+      <div class="itemrow"><div style="flex:1">
+        <div class="iname">🧰 使用報告 済み</div>
+        <div class="imeta">報告者 <b>${esc(d.used_by||'')}</b> ・ ${esc(fmtDT(d.used_at))}</div>
+      </div><span class="badge bu">使用完了</span></div>
+      ${left.length
+        ?`<div style="margin-top:6px;font-size:.83rem"><b style="color:var(--red)">📦 残った資材:</b>${left.map(c=>`<div class="hist">${esc(c.name)} × ${c.left} ${esc(c.unit||'')}（出荷 ${c.qty}）</div>`).join('')}</div>`
+        :`<div style="margin-top:6px;font-size:.83rem;color:var(--green)"><b>✅ 残なし — すべて使用されました</b></div>`}
+      ${d.use_note?`<div style="margin-top:4px;font-size:.8rem">📝 ${esc(d.use_note)}</div>`:''}
+    </div>`;
+}
+function usageSectionHtml(d){
+  if(d.used_at)return usageDoneHtml(d);
+  const part=!!RCPT.usePart;
+  return `<div class="card" style="border:1.5px solid #c3d9ec">
+      <b style="font-size:.92rem">🧰 資材の使用報告</b>
+      <div style="font-size:.8rem;color:var(--gray);margin-top:4px;line-height:1.6">工事で資材を使い終わりましたら、こちらから報告をお願いします。<br>すべて使った場合はボタン1つでOK。余った場合は残数を入力してください。</div>
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">報告者のお名前（必須）</label>
+      <input id="usName" value="${esc(RCPT.uname??d.received_by??'')}" placeholder="例: 染谷" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="RCPT.uname=this.value">
+      ${part?`
+        <div style="margin-top:10px;font-size:.82rem;font-weight:700">残った数量を入力（使い切った品目は 0 のまま）</div>
+        ${d.lines.map(l=>`<div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+          <div style="flex:1;font-size:.83rem"><b>${esc(l.name)}</b><div style="font-size:.72rem;color:var(--gray)">出荷 ${l.qty} ${esc(l.unit||'')}</div></div>
+          <span style="font-size:.75rem;color:var(--gray)">残</span>
+          <input id="usL_${l.item_id}" type="number" min="0" max="${l.qty}" inputmode="numeric" value="${RCPT.uleft&&RCPT.uleft[l.item_id]!=null?RCPT.uleft[l.item_id]:0}" style="width:84px;padding:9px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;text-align:right" oninput="RCPT.uleft=RCPT.uleft||{};RCPT.uleft[${l.item_id}]=this.value">
+          <span style="font-size:.75rem;color:var(--gray)">${esc(l.unit||'')}</span>
+        </div>`).join('')}
+        <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">メモ（任意 — 返却予定・保管場所など）</label>
+        <input id="usNote" value="${esc(RCPT.unote||'')}" placeholder="例: 次回搬入時に返却予定" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="RCPT.unote=this.value">
+        <button class="shipbtn" style="background:#2458a6;margin-top:12px;padding:14px" onclick="rcptUseSubmit()">🧰 使用報告を送信（残数あり）</button>
+        <button class="baddbig" style="margin-top:8px" onclick="rcptUsePartToggle()">▴ 残数入力をやめる</button>
+      `:`
+        <button class="shipbtn" style="background:var(--green);margin-top:12px;padding:15px;font-size:1.02rem" onclick="rcptUseAll()">✅ すべて使用しました（残なし）</button>
+        <button class="baddbig" style="margin-top:8px" onclick="rcptUsePartToggle()">▾ 一部余りました（残数を入力する）</button>
+      `}
+    </div>`;
+}
+function keepUseInputs(){
+  if($('usName'))RCPT.uname=$('usName').value;
+  if($('usNote'))RCPT.unote=$('usNote').value;
+}
+window.rcptUsePartToggle=function(){keepUseInputs();RCPT.usePart=!RCPT.usePart;rcptRender();};
+async function sendUsage(id,token,name,note,items){
+  return await api('rpc/qr_usage_report',{method:'POST',body:JSON.stringify({
+    p_id:id,p_token:token,p_name:name,p_tel:'',p_note:note,p_items:items})});
+}
+window.rcptUseAll=async function(){
+  keepUseInputs();
+  const d=RCPT.data;
+  const name=(RCPT.uname??d.received_by??'').trim();
+  if(!name){toast('お名前を入力してください');$('usName')?.focus();return;}
+  if(!confirm(`全${d.lines.length}品目を「すべて使用（残なし）」として報告します。\nよろしいですか？`))return;
+  const items=d.lines.map(l=>({item_id:l.item_id,name:l.name,qty:l.qty,unit:l.unit,left:0}));
+  try{
+    const r=await sendUsage(RCPT.id,RCPT.token,name,(RCPT.unote||'').trim(),items);
+    if(r&&r.ok){toast('使用報告を送信しました');await renderReceipt(RCPT.id,RCPT.token);}
+    else if(r&&r.error==='already'){toast('すでに使用報告済みです');await renderReceipt(RCPT.id,RCPT.token);}
+    else{toast('エラー: 送信できませんでした');}
+  }catch(e){toast('通信エラー: もう一度お試しください');console.error(e);}
+};
+window.rcptUseSubmit=async function(){
+  keepUseInputs();
+  const d=RCPT.data;
+  const name=(RCPT.uname??d.received_by??'').trim();
+  if(!name){toast('お名前を入力してください');$('usName')?.focus();return;}
+  const items=[];let bad=null,anyLeft=false;
+  for(const l of d.lines){
+    const el=$('usL_'+l.item_id);
+    const v=Math.floor(Number(el?el.value:0)||0);
+    if(v<0||v>l.qty){bad=l;break;}
+    if(v>0)anyLeft=true;
+    items.push({item_id:l.item_id,name:l.name,qty:l.qty,unit:l.unit,left:v});
+  }
+  if(bad){toast(`「${bad.name}」の残数は 0〜${bad.qty} の範囲で入力してください`);return;}
+  const leftTxt=items.filter(i=>i.left>0).map(i=>i.name+'×'+i.left).join('、');
+  if(!confirm(anyLeft?`残った資材: ${leftTxt}\nこの内容で使用報告しますか？`:`残なし（すべて使用）として報告します。\nよろしいですか？`))return;
+  try{
+    const r=await sendUsage(RCPT.id,RCPT.token,name,(RCPT.unote||'').trim(),items);
+    if(r&&r.ok){toast('使用報告を送信しました');await renderReceipt(RCPT.id,RCPT.token);}
+    else if(r&&r.error==='already'){toast('すでに使用報告済みです');await renderReceipt(RCPT.id,RCPT.token);}
+    else{toast('エラー: 送信できませんでした');}
+  }catch(e){toast('通信エラー: もう一度お試しください');console.error(e);}
+};
 window.showReceiptQR=function(sid){
   const sp=SHIPS.find(x=>x.id===sid); if(!sp||!sp.receive_token)return;
   const img=qrDataUrl(receiptUrl(sp),10,4);
@@ -1756,7 +1863,7 @@ async function renderReceiptGroup(parts){
   const list=parts.map((p,i)=>({id:p.id,token:p.token,data:ds[i]})).filter(x=>x.data);
   if(!list.length){$('app').innerHTML='<div class="empty">このリンクは無効です。<br>出荷元（しろくま電力 購買部）にご確認ください。</div>';return;}
   const oldIds=RCPTM.list.map(x=>x.id).join('.');
-  if(oldIds!==list.map(x=>x.id).join('.'))RCPTM.checks={};
+  if(oldIds!==list.map(x=>x.id).join('.')){RCPTM.checks={};RCPTM.usePart=false;RCPTM.uleft={};RCPTM.uname=null;RCPTM.unote='';}
   RCPTM.list=list;
   rcptgRender();
   window.scrollTo(0,0);
@@ -1788,17 +1895,21 @@ function rcptgRender(){
   const boxSec=L.map((e,i)=>{
     const d=e.data;
     if(d.status==='received'){
-      return `<h2>📦 箱 ${i+1}／${N} — S-${e.id} <span class="badge bg" style="font-size:.68rem">受領済</span></h2>
-        <div class="card" style="background:var(--greenbg);border-color:#bfe3cf;font-size:.83rem;padding:10px 14px">✅ 受領者 <b>${esc(d.received_by||'')}</b>${d.received_tel?'（'+esc(d.received_tel)+'）':''} ・ ${esc(fmtDT(d.received_at))}</div>`;
+      const uLeft=(Array.isArray(d.use_checks)?d.use_checks:[]).filter(c=>Number(c.left)>0);
+      return `<h2>📦 箱 ${i+1}／${N} — S-${e.id} <span class="badge ${d.used_at?'bu':'bg'}" style="font-size:.68rem">${d.used_at?'使用完了':'受領済'}</span></h2>
+        <div class="card" style="background:var(--greenbg);border-color:#bfe3cf;font-size:.83rem;padding:10px 14px">✅ 受領者 <b>${esc(d.received_by||'')}</b>${d.received_tel?'（'+esc(d.received_tel)+'）':''} ・ ${esc(fmtDT(d.received_at))}
+        ${d.used_at?`<div style="margin-top:5px">🧰 使用報告 <b>${esc(d.used_by||'')}</b> ・ ${esc(fmtDT(d.used_at))}　${uLeft.length?`<b style="color:var(--red)">残: ${uLeft.map(c=>esc(c.name)+'×'+c.left).join('、')}</b>`:'残なし'}</div>`:''}</div>`;
     }
     const done=d.lines.filter(l=>RCPTM.checks[e.id+':'+l.item_id]).length;
     return `<h2>📦 箱 ${i+1}／${N} — S-${e.id}（${done}/${d.lines.length}）</h2>
       <div class="card" style="padding:2px 12px">${rcptgLines(e,false)}</div>`;
   }).join('');
   if(!pend.length){
+    const unused=L.filter(e=>!e.data.used_at);
     $('app').innerHTML=`
-      <div class="rcptok"><div class="big">✅</div><h2>全${N}箱 受領確認 済み</h2></div>
+      <div class="rcptok"><div class="big">${unused.length?'✅':'🧰'}</div><h2>全${N}箱 受領確認 済み${unused.length?'':'・使用完了'}</h2></div>
       ${head}${boxSec}
+      ${rcptgUsageHtml(unused)}
       <div class="cap" style="text-align:center">この画面は閉じて構いません。ご協力ありがとうございました。</div>`;
     return;
   }
@@ -1864,6 +1975,98 @@ window.rcptgSubmit=async function(){
   }
   toast(fail?`受領確認: ${ok}箱 成功 ・ ${fail}箱 失敗。再読み込みしてご確認ください`:`全${ok}箱の受領確認を送信しました`);
   await renderReceiptGroup(RCPTM.list.map(e=>({id:e.id,token:e.token})));
+};
+
+/* ---- 使用報告（総括・案件全体の品目単位で入力） ---- */
+function rcptgAggItems(unused){
+  const agg={};
+  unused.forEach(e=>e.data.lines.forEach(l=>{
+    if(!agg[l.item_id])agg[l.item_id]={item_id:l.item_id,name:l.name,unit:l.unit,qty:0};
+    agg[l.item_id].qty+=Number(l.qty);
+  }));
+  return Object.values(agg);
+}
+function rcptgUsageHtml(unused){
+  if(!unused.length)return '';
+  const items=rcptgAggItems(unused);
+  const part=!!RCPTM.usePart;
+  const name0=RCPTM.uname??(unused[0].data.received_by||'');
+  return `<div class="card" style="border:1.5px solid #c3d9ec">
+      <b style="font-size:.92rem">🧰 資材の使用報告（未報告 ${unused.length}箱・案件全体でまとめて）</b>
+      <div style="font-size:.8rem;color:var(--gray);margin-top:4px;line-height:1.6">工事で資材を使い終わりましたら、こちらから報告をお願いします。<br>箱の区別は不要です — <b>案件全体で</b>すべて使ったか、何個余ったかをご入力ください。</div>
+      <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">報告者のお名前（必須）</label>
+      <input id="ugName" value="${esc(name0)}" placeholder="例: 染谷" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="RCPTM.uname=this.value">
+      ${part?`
+        <div style="margin-top:10px;font-size:.82rem;font-weight:700">残った数量を入力（使い切った品目は 0 のまま）</div>
+        ${items.map(l=>`<div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+          <div style="flex:1;font-size:.83rem"><b>${esc(l.name)}</b><div style="font-size:.72rem;color:var(--gray)">出荷合計 ${l.qty} ${esc(l.unit||'')}</div></div>
+          <span style="font-size:.75rem;color:var(--gray)">残</span>
+          <input id="ugL_${l.item_id}" type="number" min="0" max="${l.qty}" inputmode="numeric" value="${RCPTM.uleft&&RCPTM.uleft[l.item_id]!=null?RCPTM.uleft[l.item_id]:0}" style="width:84px;padding:9px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;text-align:right" oninput="RCPTM.uleft=RCPTM.uleft||{};RCPTM.uleft[${l.item_id}]=this.value">
+          <span style="font-size:.75rem;color:var(--gray)">${esc(l.unit||'')}</span>
+        </div>`).join('')}
+        <label style="font-size:.78rem;color:var(--gray);display:block;margin-top:10px">メモ（任意 — 返却予定・保管場所など）</label>
+        <input id="ugNote" value="${esc(RCPTM.unote||'')}" placeholder="例: 次回搬入時に返却予定" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem" oninput="RCPTM.unote=this.value">
+        <button class="shipbtn" style="background:#2458a6;margin-top:12px;padding:14px" onclick="rcptgUseSubmit()">🧰 使用報告を送信（残数あり）</button>
+        <button class="baddbig" style="margin-top:8px" onclick="rcptgUsePartToggle()">▴ 残数入力をやめる</button>
+      `:`
+        <button class="shipbtn" style="background:var(--green);margin-top:12px;padding:15px;font-size:1.02rem" onclick="rcptgUseAll()">✅ すべて使用しました（残なし）</button>
+        <button class="baddbig" style="margin-top:8px" onclick="rcptgUsePartToggle()">▾ 一部余りました（残数を入力する）</button>
+      `}
+    </div>`;
+}
+function keepUsegInputs(){
+  if($('ugName'))RCPTM.uname=$('ugName').value;
+  if($('ugNote'))RCPTM.unote=$('ugNote').value;
+}
+window.rcptgUsePartToggle=function(){keepUsegInputs();RCPTM.usePart=!RCPTM.usePart;rcptgRender();};
+async function rcptgSendUsage(leftMap){
+  const name=(RCPTM.uname||'').trim();
+  const note=(RCPTM.unote||'').trim();
+  const unused=RCPTM.list.filter(e=>e.data.status==='received'&&!e.data.used_at);
+  const per={...leftMap};
+  let ok=0,fail=0;
+  for(const e of unused){
+    const boxItems=e.data.lines.map(l=>{
+      const a=Math.min(Number(l.qty),per[l.item_id]||0);
+      per[l.item_id]=(per[l.item_id]||0)-a;
+      return {item_id:l.item_id,name:l.name,qty:l.qty,unit:l.unit,left:a};
+    });
+    try{
+      const r=await sendUsage(e.id,e.token,name,note,boxItems);
+      if(r&&(r.ok||r.error==='already'))ok++; else fail++;
+    }catch(err){fail++;console.error(err);}
+  }
+  toast(fail?`使用報告: ${ok}箱 成功 ・ ${fail}箱 失敗。再読み込みしてご確認ください`:`使用報告を送信しました（${ok}箱分）`);
+  await renderReceiptGroup(RCPTM.list.map(e=>({id:e.id,token:e.token})));
+}
+window.rcptgUseAll=async function(){
+  keepUsegInputs();
+  const unused=RCPTM.list.filter(e=>e.data.status==='received'&&!e.data.used_at);
+  if(!unused.length)return;
+  if(RCPTM.uname==null)RCPTM.uname=unused[0].data.received_by||'';
+  if(!(RCPTM.uname||'').trim()){toast('お名前を入力してください');$('ugName')?.focus();return;}
+  if(!confirm(`未報告の${unused.length}箱すべてを「すべて使用（残なし）」として報告します。\nよろしいですか？`))return;
+  await rcptgSendUsage({});
+};
+window.rcptgUseSubmit=async function(){
+  keepUsegInputs();
+  const unused=RCPTM.list.filter(e=>e.data.status==='received'&&!e.data.used_at);
+  if(!unused.length)return;
+  if(RCPTM.uname==null)RCPTM.uname=unused[0].data.received_by||'';
+  if(!(RCPTM.uname||'').trim()){toast('お名前を入力してください');$('ugName')?.focus();return;}
+  const items=rcptgAggItems(unused);
+  const leftMap={};let bad=null,anyLeft=false;
+  for(const l of items){
+    const el=$('ugL_'+l.item_id);
+    const v=Math.floor(Number(el?el.value:0)||0);
+    if(v<0||v>l.qty){bad=l;break;}
+    if(v>0)anyLeft=true;
+    leftMap[l.item_id]=v;
+  }
+  if(bad){toast(`「${bad.name}」の残数は 0〜${bad.qty} の範囲で入力してください`);return;}
+  const leftTxt=items.filter(i=>leftMap[i.item_id]>0).map(i=>i.name+'×'+leftMap[i.item_id]).join('、');
+  if(!confirm(anyLeft?`残った資材: ${leftTxt}\nこの内容で使用報告しますか？（${unused.length}箱分）`:`残なし（すべて使用）として報告します。\nよろしいですか？（${unused.length}箱分）`))return;
+  await rcptgSendUsage(leftMap);
 };
 
 /* ---------- 認証（Googleログイン + 承認制アクセス） ---------- */
