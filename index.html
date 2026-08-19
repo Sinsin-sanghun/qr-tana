@@ -270,6 +270,10 @@ function render(){
     const sp=SHIPS.find(x=>x.id===+h.slice(2));
     if(sp){renderShip(sp);window.scrollTo(0,0);return;}
   }
+  if(h.startsWith('M-')){
+    const mids=h.slice(2).split('.').map(Number).filter(Boolean);
+    if(mids.length>=2){renderMerged(mids);window.scrollTo(0,0);return;}
+  }
   if(h.startsWith('I-')){
     const code=h.slice(2);
     const it=ITEMS.find(x=>(x.item_code||'')===code||(x.loc_code||'')===code);
@@ -1173,7 +1177,7 @@ function shipRowsHtml(){
     const totalQ=items.reduce((a,[,v])=>a+v,0);
     const summary=items.slice(0,3).map(([iid,v])=>{const it=itemById(+iid);return esc((it?.name||'').slice(0,14))+'×'+v;}).join('、');
     return `<div class="card" style="cursor:pointer" onclick="location.hash='S-${sp.id}'">
-      <div class="itemrow"><div style="flex:1">
+      <div class="itemrow"><input type="checkbox" ${MSEL.has(sp.id)?'checked':''} title="まとめリストに含める" style="width:22px;height:22px;flex-shrink:0;accent-color:#16324f;cursor:pointer" onclick="event.stopPropagation()" onchange="toggleMsel(${sp.id},this.checked)"><div style="flex:1">
         <div class="iname">📄 ${esc(sp.ship_date)}（${wdayOf(sp.ship_date)}）　${esc(sp.site)}</div>
         <div class="imeta">${items.length}品目・計${totalQ}点 ${summary?'｜ '+summary+(items.length>3?' …':''):''}</div>
         <div class="imeta">担当 ${esc(sp.created_by||'—')}${sp.recipient_name?' ・ 現場 '+esc(sp.recipient_name):''} ・ リストNo. S-${sp.id}</div>
@@ -1183,10 +1187,72 @@ function shipRowsHtml(){
 function renderShips(){
   $('hTitle').textContent='🚚 出荷履歴';
   $('app').innerHTML=`
-    <div class="chips"><span class="chip cn">出荷 ${SHIPS.length}件</span><span class="chip cn">タップで出荷リスト（印刷可）を再表示</span></div>
+    <div class="chips"><span class="chip cn">出荷 ${SHIPS.length}件</span><span class="chip cn">タップで出荷リスト（印刷可）を再表示</span><span class="chip cn">☑ 2件以上選ぶと総括リスト印刷</span></div>
     <input placeholder="🔍 案件名・日付で検索…" value="${esc(SHIPQ)}" oninput="SHIPQ=this.value;$('shipList').innerHTML=shipRowsHtml()" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;margin-bottom:10px">
     ${can('ship_create')?`<button class="shipbtn" onclick="NEWSHIP=null;location.hash='newship'">＋ 新しい出荷リストを作成</button>`:''}
-    <div id="shipList">${shipRowsHtml()}</div>`;
+    <div id="shipList">${shipRowsHtml()}</div>
+    <div id="mselBar" style="position:fixed;left:0;right:0;bottom:0;display:${MSEL.size>=2?'flex':'none'};justify-content:center;gap:10px;padding:12px;background:rgba(22,50,79,.96);z-index:40">
+      <button class="mok" style="padding:12px 22px" onclick="openMerged()">📑 まとめリストを表示（<span id="mselN">${MSEL.size}</span>件）</button>
+      <button class="mcancel" style="padding:12px 16px" onclick="MSEL.clear();renderShips()">✖ 選択解除</button>
+    </div>`;
+}
+/* ---- まとめリスト（総括表）: 複数の出荷リストを1枚に合算 ---- */
+let MSEL=new Set();
+window.toggleMsel=function(id,on){
+  if(on)MSEL.add(id); else MSEL.delete(id);
+  const bar=$('mselBar'); if(bar){bar.style.display=MSEL.size>=2?'flex':'none';const n=$('mselN');if(n)n.textContent=MSEL.size;}
+};
+window.openMerged=function(){
+  if(MSEL.size<2){toast('2件以上選択してください');return;}
+  location.hash='M-'+[...MSEL].sort((a,b)=>a-b).join('.');
+};
+function renderMerged(ids){
+  $('hTitle').textContent='📑 総括出荷リスト';
+  const sps=ids.map(i=>SHIPS.find(x=>x.id===i)).filter(Boolean);
+  if(sps.length<2){location.hash='ships';return;}
+  const sites=[...new Set(sps.map(s=>s.site))];
+  const dates=[...new Set(sps.map(s=>s.ship_date))];
+  const sp0=sps[0];
+  let totalQ=0; const agg={};
+  const boxSections=sps.map((sp,bi)=>{
+    const a={};
+    TX.filter(t=>t.shipment_id===sp.id).forEach(t=>{a[t.item_id]=(a[t.item_id]||0)+(-Number(t.qty));});
+    Object.entries(a).forEach(([iid,q])=>{
+      const k=+iid; agg[k]=agg[k]||{qty:0,det:[]};
+      agg[k].qty+=q; agg[k].det.push('箱'+(bi+1)+'×'+q); totalQ+=q;
+    });
+    const rows=Object.entries(a).map(([iid,q],idx)=>{const it=itemById(+iid);
+      return `<tr><td class="ntd" style="width:34px;font-weight:400">${idx+1}</td>
+        <td><b>${esc(it?.name||'')}</b>${it?.loc_code?` <span style="font-size:.72rem;color:#475569">[${esc(it.loc_code)}]</span>`:''}</td>
+        <td class="ntd">${q} <span style="font-size:.7rem;font-weight:400">${esc(it?.unit||'')}</span></td></tr>`;}).join('');
+    return `<h3 style="margin:16px 0 6px;font-size:1rem">📦 箱 ${bi+1}／${sps.length} — リストNo. S-${sp.id}
+        <span class="badge ${sp.status==='received'?'bg':'ba'}" style="font-size:.68rem">${sp.status==='received'?'受領済':'受領待ち'}</span></h3>
+      <table><tr><th style="width:34px">No</th><th>品名</th><th style="width:104px">数量</th></tr>${rows}</table>`;
+  }).join('');
+  const totRows=Object.entries(agg).map(([iid,v],i)=>{const it=itemById(+iid);
+    return `<tr><td class="ntd" style="width:34px;font-weight:400">${i+1}</td>
+      <td><b>${esc(it?.name||'')}</b></td>
+      <td class="ntd">${v.qty} <span style="font-size:.7rem;font-weight:400">${esc(it?.unit||'')}</span></td>
+      <td style="font-size:.78rem">${v.det.join('、')}</td></tr>`;}).join('');
+  $('app').innerHTML=`
+    <div class="btnrow noprint" style="margin-bottom:10px">
+      <button class="mcancel" style="flex:1;padding:12px 0" onclick="location.hash='ships'">← 戻る</button>
+      <button class="mok" style="flex:2;padding:12px 0" onclick="window.print()">🖨 印刷（A4）</button>
+    </div>
+    <div class="sdoc">
+      <h1>出荷リスト（総括・全${sps.length}箱）</h1>
+      <div style="font-size:.8rem;color:#475569">しろくま電力株式会社 購買部 ・ 野田倉庫</div>
+      <div class="smeta">
+        <div>📅 出荷日: <b>${dates.map(esc).join(' / ')}</b></div>
+        <div>📍 案件: <b>${sites.map(esc).join(' / ')}</b></div>
+        ${sp0.recipient_name?`<div>👤 現場担当: <b>${esc(sp0.recipient_name)}</b>${sp0.recipient_tel?`（📞 ${esc(sp0.recipient_tel)}）`:''}</div>`:''}
+        <div>担当: ${esc(sp0.created_by||'')}</div>
+      </div>
+      <h3 style="margin:8px 0 6px;font-size:1.05rem">■ 総合計（全${sps.length}箱・計${totalQ}点）</h3>
+      <table><tr><th style="width:34px">No</th><th>品名</th><th style="width:104px">合計</th><th style="width:170px">箱内訳</th></tr>${totRows}</table>
+      ${boxSections}
+      <div class="foot">※ 受領確認は、各箱に同梱・貼付された出荷リストのQRコードから<b>箱ごと</b>に行ってください。<br>発行: ${todayStr()} ・ 総括リスト（対象: ${sps.map(s=>'S-'+s.id).join('、')}）</div>
+    </div>`;
 }
 function renderShip(sp){
   $('hTitle').textContent='📄 出荷リスト';
@@ -1314,13 +1380,6 @@ async function renderSettings(){
     <h2>👥 メンバーと権限（role）</h2>
     <div id="auList" class="card"><div class="loading" style="padding:14px 0">読み込み中…</div></div>
     <div class="cap" style="margin:-4px 0 12px">ここに載っているアカウントだけがログインできます。✖で削除すると即時アクセス不可になります</div>
-    <h2>🏢 自動許可ドメイン</h2>
-    <div class="card">
-      <label style="font-size:.78rem;color:var(--gray)">これらのドメインの会社メールは、Googleログインだけで承認不要で入れます（カンマ区切り）</label>
-      <input id="autoDoms" value="${esc(AUTODOMS)}" placeholder="例: shirokumapower.com,afterfit.co.jp" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:.95rem">
-      <div class="mact"><button class="mok" style="flex:1" onclick="saveAutoDoms()">💾 ドメインを保存</button></div>
-      <div class="cap" style="margin-top:8px">⚠ IT方針（2026-08-17）: <b>空欄のまま維持</b>してください。ドメインを入れると事前登録なしで入れるようになってしまいます</div>
-    </div>
     <h2>🚫 ブロック一覧</h2>
     <div id="blkList" class="card" style="padding:2px 12px">${blockedListHtml()}</div>
     <div class="cap" style="margin:-4px 0 12px">ブロック中は会社ドメインでも入れません。解除すると再ログインで入れます</div>
@@ -1435,14 +1494,6 @@ window.removeUser=async function(email){
   try{
     await api('qr_allowed_users?email=eq.'+encodeURIComponent(email),{method:'DELETE'});
     toast('削除しました');loadAUsers();
-  }catch(e){toast('エラー');console.error(e);}
-};
-window.saveAutoDoms=async function(){
-  const v=($('autoDoms').value||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean).join(',');
-  try{
-    const r=await api('rpc/qr_save_setting',{method:'POST',body:JSON.stringify({p_key:'auto_domains',p_value:v})});
-    if(r&&r.ok){AUTODOMS=v;$('autoDoms').value=v;toast(v?'自動許可ドメインを保存しました':'自動許可を停止しました（承認制のみ）');}
-    else toast('エラー: 保存できませんでした');
   }catch(e){toast('エラー');console.error(e);}
 };
 window.changePin=async function(){
