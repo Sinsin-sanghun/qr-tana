@@ -1122,7 +1122,18 @@ function renderNewShip(){
       <button class="mcancel" style="flex:1;padding:13px 0" onclick="cancelShipForm()">キャンセル</button>
       <button class="mok in" style="flex:2;padding:13px 0" onclick="submitShip()">${EDITSHIP?'💾 修正を保存（在庫を再調整）':'✅ 確定して出庫（リスト発行）'}</button>
     </div>
-    <div class="cap">${EDITSHIP?'保存すると出庫記録が新しい内容に置き換わり、在庫も自動調整されます':'確定すると各資材が在庫から出庫され、印刷用リストが開きます'}</div>`;
+    <div class="cap">${EDITSHIP?'保存すると出庫記録が新しい内容に置き換わり、在庫も自動調整されます':'確定すると各資材が在庫から出庫され、印刷用リストが開きます'}</div>
+    ${(()=>{if(!EDITSHIP||!ISADMIN)return '';
+      const sp=SHIPS.find(x=>x.id===EDITSHIP);
+      if(!sp||sp.status!=='received')return '';
+      return `<div class="card" style="margin-top:14px;border:1.5px solid #eeddb5;background:#fffdf5">
+        <b style="font-size:.88rem">↩️ 受領・使用記録のリセット（管理者のみ）</b>
+        <div style="font-size:.78rem;color:var(--gray);margin-top:4px;line-height:1.6">現場が誤って確認した場合の取り消しです。理由の入力が必須で、修正はログ（修正履歴）に記録されます。取り消し後、現場は同じQRで再確認できます。</div>
+        <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
+          ${sp.used_at?`<button class="bset" style="padding:8px 13px;font-size:.8rem" onclick="resetReceipt(${sp.id},'usage')">↩️ 使用報告をリセット</button>`:''}
+          <button class="bset" style="padding:8px 13px;font-size:.8rem;color:var(--red)" onclick="resetReceipt(${sp.id},'receipt')">↩️ 受領記録をリセット</button>
+        </div>
+      </div>`;})()}`;
 }
 window.shipAddModal=function(){
   openMd(`<h3>＋ 送る資材を選択</h3>
@@ -1386,11 +1397,7 @@ function renderShip(sp){
         ${sp.used_at
           ?`<div style="margin-top:6px;padding:7px 10px;background:#e3ecfb;border-radius:8px;font-size:.8rem">🧰 <b>使用完了</b>　報告者 <b>${esc(sp.used_by||'')}</b> ・ ${esc(fmtDT(sp.used_at))}<br>${useLeftSummary(sp)?`<b style="color:var(--red)">残あり: ${useLeftSummary(sp)}</b>　→ 返却・次回出荷量の見直し要検討`:'残なし（全て使用）'}${sp.use_note?`<br>📝 ${esc(sp.use_note)}`:''}</div>`
           :`<div style="margin-top:6px;font-size:.78rem;color:var(--gray)">🧰 使用報告 待ち — 現場が同じ受領QRから「すべて使用／残数入力」を報告できます</div>`}
-        ${ISADMIN?`<div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
-          ${sp.used_at?`<button class="bset" style="padding:6px 12px;font-size:.75rem" onclick="resetReceipt(${sp.id},'usage')">↩️ 使用報告をリセット</button>`:''}
-          <button class="bset" style="padding:6px 12px;font-size:.75rem;color:var(--red)" onclick="resetReceipt(${sp.id},'receipt')">↩️ 受領記録をリセット</button>
-          <span style="font-size:.7rem;color:var(--gray);align-self:center">誤操作の取り消し（管理者のみ）・同じQRで再確認できます</span>
-        </div>`:''}
+        ${ISADMIN?`<div style="margin-top:7px;font-size:.7rem;color:var(--gray)">記録の取り消しは ✏️ 修正画面の「受領・使用記録のリセット」から行えます</div>`:''}
       </div>`
     :`<div class="card noprint" style="background:var(--amberbg);border-color:#eeddb5">
         <div class="itemrow"><div style="flex:1">
@@ -1456,7 +1463,9 @@ window.resetReceipt=async function(sid,mode){
   try{
     const r=await api('rpc/qr_reset_receipt',{method:'POST',body:JSON.stringify({p_id:sid,p_mode:mode,p_reason:reason})});
     if(r&&r.ok){
-      await loadAll();render();
+      await loadAll();
+      NEWSHIP=null;EDITSHIP=null;EDITOLD={};
+      if(location.hash!=='#S-'+sid)location.hash='S-'+sid; else render();
       toast(mode==='usage'?`S-${sid} の使用報告を取り消しました`:`S-${sid} の受領記録を取り消しました（受領待ちに戻りました）`);
     }else{
       toast(r&&r.error==='forbidden'?'権限がありません（管理者のみ）':'エラー: 取り消せませんでした');
