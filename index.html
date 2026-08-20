@@ -190,7 +190,7 @@ const URL0='https://ndbqaphghlfcsfkfwbnn.supabase.co/rest/v1/';
 const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kYnFhcGhnaGxmY3Nma2Z3Ym5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NTExNTIsImV4cCI6MjA5NDMyNzE1Mn0.F_iAEpv8yz7Cyy6ra6svJa8GdZnoyguayxAsFSuEcrY';
 const H={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
 const sb=window.supabase.createClient('https://ndbqaphghlfcsfkfwbnn.supabase.co',KEY);
-let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],SHIPS=[],RECIPS=[],NEWM=[],PINHASH='';
+let SHELVES=[],ITEMS=[],TX=[],REQS=[],PHOTOS=[],ARS=[],SHIPS=[],RECIPS=[],NEWM=[],PINHASH='',AUDITL=[];
 let SESSION=null,ME='',MENAME='',ISADMIN=false,READY=false;
 /* 機能権限（マスター設定タブで変更・qr_settings feature_perms に保存） */
 let PERMS={},AUTODOMS='';
@@ -206,7 +206,7 @@ async function api(path,opt){
 }
 async function loadAll(){
   let ST;
-  [SHELVES,ITEMS,TX,REQS,PHOTOS,ARS,SHIPS,RECIPS,NEWM,ST]=await Promise.all([
+  [SHELVES,ITEMS,TX,REQS,PHOTOS,ARS,SHIPS,RECIPS,NEWM,ST,AUDITL]=await Promise.all([
     api('qr_shelves?select=*&order=sort'),
     api('qr_items?select=*&order=item_code&limit=5000'),
     api('qr_transactions?select=*&order=created_at.desc&limit=10000'),
@@ -216,7 +216,8 @@ async function loadAll(){
     api('qr_shipments?select=*&order=ship_date.desc,id.desc&limit=500'),
     api('qr_recipients?select=*&active=eq.true&order=sort,id&limit=300'),
     ISADMIN?api('qr_allowed_users?select=email,name,role,ack,joined_at&ack=eq.false&order=joined_at.desc&limit=100').catch(()=>[]):Promise.resolve([]),
-    api('qr_settings?select=key,value')
+    api('qr_settings?select=key,value'),
+    api('qr_receipt_audit?select=*&order=created_at.desc&limit=300').catch(()=>[])
   ]);
   PINHASH=(ST||[]).find(x=>x.key==='approval_pin_hash')?.value||'';
   AUTODOMS=(ST||[]).find(x=>x.key==='auto_domains')?.value||'';
@@ -1413,6 +1414,7 @@ function renderShip(sp){
       ${can('ship_delete')?`<button class="bset" style="padding:12px 14px;color:var(--red)" title="削除" onclick="delShip(${sp.id})">🗑</button>`:''}
     </div>
     ${statusCard}
+    ${auditCardHtml(sp.id)}
     <div class="sdoc">
       <h1>出荷リスト</h1>
       <div style="font-size:.8rem;color:#475569">しろくま電力株式会社 購買部 ・ 野田倉庫</div>
@@ -1431,6 +1433,16 @@ function renderShip(sp){
     </div>`;
 }
 
+/* ---------- 修正履歴の表示 ---------- */
+function auditCardHtml(sid){
+  const rows=AUDITL.filter(a=>a.shipment_id===sid);
+  if(!rows.length)return '';
+  return `<div class="card noprint" style="border-color:#eeddb5;background:#fffdf5">
+      <b style="font-size:.85rem">📋 修正履歴（${rows.length}件）</b>
+      ${rows.map(a=>`<div class="hist" style="font-size:.78rem">${esc(fmtDT(a.created_at))} ・ <b>${esc(a.actor)}</b>${a.via==='admin'?'（管理者）':'（現場）'} ・ ${a.action==='reset_usage'?'使用報告の取り消し':'受領記録の取り消し'}<br><span style="color:var(--gray)">理由:</span> ${esc(a.reason||'')}</div>`).join('')}
+    </div>`;
+}
+
 /* ---------- 受領・使用記録のリセット（管理者のみ） ---------- */
 window.resetReceipt=async function(sid,mode){
   if(!ISADMIN){toast('権限がありません（管理者のみ）');return;}
@@ -1439,8 +1451,10 @@ window.resetReceipt=async function(sid,mode){
     ?`S-${sid} の使用報告を取り消します。\n受領記録はそのまま残り、現場は同じQRから使用報告をやり直せます。\nよろしいですか？`
     :`S-${sid} の受領記録を取り消します。\n使用報告があれば一緒に取り消され、状態は「受領待ち」に戻ります。\n現場は同じQRから受領確認をやり直せます。よろしいですか？`;
   if(!confirm(msg))return;
+  const reason=(prompt('修正の理由を入力してください（必須・ログに記録されます）\n例: 現場が誤って別の箱をチェックした')||'').trim();
+  if(!reason){toast('理由が未入力のため取り消しませんでした');return;}
   try{
-    const r=await api('rpc/qr_reset_receipt',{method:'POST',body:JSON.stringify({p_id:sid,p_mode:mode})});
+    const r=await api('rpc/qr_reset_receipt',{method:'POST',body:JSON.stringify({p_id:sid,p_mode:mode,p_reason:reason})});
     if(r&&r.ok){
       await loadAll();render();
       toast(mode==='usage'?`S-${sid} の使用報告を取り消しました`:`S-${sid} の受領記録を取り消しました（受領待ちに戻りました）`);
@@ -1708,6 +1722,7 @@ function rcptRender(){
       ${ng.length?`<div class="card warn"><b style="color:var(--red)">⚠️ 未確認・問題ありの品目</b>${ng.map(c=>`<div class="hist">${esc(c.name)} × ${c.qty}</div>`).join('')}</div>`:''}
       ${d.receive_note?`<div class="card"><b style="font-size:.85rem">📝 メモ</b><div style="font-size:.85rem;margin-top:4px">${esc(d.receive_note)}</div></div>`:''}
       ${usageSectionHtml(d)}
+      ${rcptFixCardHtml(d,RCPT.id,RCPT.token)}
       <div class="cap" style="text-align:center">この画面は閉じて構いません。ご協力ありがとうございました。</div>`;
     return;
   }
@@ -1860,6 +1875,46 @@ window.rcptUseSubmit=async function(){
     else{toast('エラー: 送信できませんでした');}
   }catch(e){toast('通信エラー: もう一度お試しください');console.error(e);}
 };
+/* ---- 現場からの記録修正（理由必須・必ずログ） ---- */
+function rcptFixCardHtml(d,id,token){
+  if(d.status!=='received')return '';
+  return `<div class="card" style="border:1.5px solid #eeddb5;background:#fffdf5">
+      <b style="font-size:.88rem">⚠️ 間違えて確認した場合（記録の修正）</b>
+      <div style="font-size:.78rem;color:var(--gray);margin-top:4px;line-height:1.6">修正には<b>理由の入力が必須</b>で、修正内容はすべてログに記録されます。取り消した後、同じ画面からもう一度ご入力ください。</div>
+      <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
+        ${d.used_at?`<button class="bset" style="padding:8px 13px;font-size:.8rem" onclick="rcptFixOpen(${id},'${esc(token)}','usage','${esc(d.used_by||d.received_by||'')}')">🧰 使用報告をやり直す</button>`:''}
+        <button class="bset" style="padding:8px 13px;font-size:.8rem" onclick="rcptFixOpen(${id},'${esc(token)}','receipt','${esc(d.received_by||'')}')">📦 受領確認をやり直す</button>
+      </div>
+    </div>`;
+}
+window.rcptFixOpen=function(id,token,mode,defName){
+  openMd(`<h3>⚠️ ${mode==='usage'?'使用報告':'受領確認'}のやり直し — S-${id}</h3>
+    <div style="font-size:.82rem;color:var(--gray);line-height:1.65;margin-bottom:10px">${mode==='usage'
+      ?'現在の使用報告を取り消して、もう一度入力し直します。'
+      :'現在の受領記録（使用報告があればそれも）を取り消して、もう一度確認し直します。'}<br>この修正は<b>ログに記録されます</b>。</div>
+    <label style="font-size:.78rem;color:var(--gray)">お名前（必須）</label>
+    <input id="fxName" value="${esc(defName||'')}" placeholder="例: 染谷" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;margin-bottom:8px">
+    <label style="font-size:.78rem;color:var(--gray)">修正の理由（必須）</label>
+    <input id="fxReason" placeholder="例: 数量を間違えてチェックした" style="width:100%;padding:11px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem">
+    <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button><button class="mok" onclick="rcptFixSubmit(${id},'${esc(token)}','${mode}')">修正を開始する</button></div>`);
+};
+window.rcptFixSubmit=async function(id,token,mode){
+  const name=($('fxName')?.value||'').trim();
+  const reason=($('fxReason')?.value||'').trim();
+  if(!name){toast('お名前を入力してください');$('fxName')?.focus();return;}
+  if(!reason){toast('修正の理由を入力してください');$('fxReason')?.focus();return;}
+  try{
+    const r=await api('rpc/qr_receipt_reset_field',{method:'POST',body:JSON.stringify({p_id:id,p_token:token,p_mode:mode,p_name:name,p_reason:reason})});
+    if(r&&r.ok){
+      closeMd();
+      toast(mode==='usage'?'使用報告を取り消しました。もう一度ご入力ください':'受領記録を取り消しました。もう一度ご確認ください');
+      const h=decodeURIComponent(location.hash.replace('#',''));
+      const pg=parseMultiReceiptHash(h);
+      if(pg)await renderReceiptGroup(pg); else await renderReceipt(id,token);
+    }else if(r&&r.error==='reason_required'){toast('修正の理由を入力してください');}
+    else{toast('エラー: 修正できませんでした');}
+  }catch(e){toast('通信エラー: もう一度お試しください');console.error(e);}
+};
 window.showReceiptQR=function(sid){
   const sp=SHIPS.find(x=>x.id===sid); if(!sp||!sp.receive_token)return;
   const img=qrDataUrl(receiptUrl(sp),10,4);
@@ -1922,7 +1977,11 @@ function rcptgRender(){
       const uLeft=(Array.isArray(d.use_checks)?d.use_checks:[]).filter(c=>Number(c.left)>0);
       return `<h2>📦 箱 ${i+1}／${N} — S-${e.id} <span class="badge ${d.used_at?'bu':'bg'}" style="font-size:.68rem">${d.used_at?'使用完了':'受領済'}</span></h2>
         <div class="card" style="background:var(--greenbg);border-color:#bfe3cf;font-size:.83rem;padding:10px 14px">✅ 受領者 <b>${esc(d.received_by||'')}</b>${d.received_tel?'（'+esc(d.received_tel)+'）':''} ・ ${esc(fmtDT(d.received_at))}
-        ${d.used_at?`<div style="margin-top:5px">🧰 使用報告 <b>${esc(d.used_by||'')}</b> ・ ${esc(fmtDT(d.used_at))}　${uLeft.length?`<b style="color:var(--red)">残: ${uLeft.map(c=>esc(c.name)+'×'+c.left).join('、')}</b>`:'残なし'}</div>`:''}</div>`;
+        ${d.used_at?`<div style="margin-top:5px">🧰 使用報告 <b>${esc(d.used_by||'')}</b> ・ ${esc(fmtDT(d.used_at))}　${uLeft.length?`<b style="color:var(--red)">残: ${uLeft.map(c=>esc(c.name)+'×'+c.left).join('、')}</b>`:'残なし'}</div>`:''}
+        <div style="display:flex;gap:8px;margin-top:7px;flex-wrap:wrap">
+          ${d.used_at?`<button class="bset" style="padding:5px 11px;font-size:.72rem" onclick="rcptFixOpen(${e.id},'${esc(e.token)}','usage','${esc(d.used_by||d.received_by||'')}')">⚠️ 使用報告をやり直す</button>`:''}
+          <button class="bset" style="padding:5px 11px;font-size:.72rem" onclick="rcptFixOpen(${e.id},'${esc(e.token)}','receipt','${esc(d.received_by||'')}')">⚠️ 受領確認をやり直す</button>
+        </div></div>`;
     }
     const done=d.lines.filter(l=>RCPTM.checks[e.id+':'+l.item_id]).length;
     return `<h2>📦 箱 ${i+1}／${N} — S-${e.id}（${done}/${d.lines.length}）</h2>
