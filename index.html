@@ -1060,11 +1060,12 @@ function logFlow(){
 }
 
 /* ---------- 出荷リスト ---------- */
-let NEWSHIP=null,EDITSHIP=null,EDITOLD={};
+let NEWSHIP=null,EDITSHIP=null,EDITOLD={},EDITBACK=null;
 window.editShip=function(sid){
   const sp=SHIPS.find(x=>x.id===sid); if(!sp)return;
   if(!can('ship_edit')){toast('権限がありません（管理者のみ）');return;}
   if(sp.status==='received'&&!confirm('受領済みのリストです。修正しますか？\n（受領記録はそのまま残ります）'))return;
+  EDITBACK=location.hash.startsWith('#M-')?location.hash.slice(1):null; // 総括から来た場合は総括へ戻る
   EDITOLD={};
   const lines=TX.filter(t=>t.shipment_id===sid&&t.kind==='out').map(t=>{
     const q=-Number(t.qty);
@@ -1077,8 +1078,9 @@ window.editShip=function(sid){
 };
 window.cancelShipForm=function(){
   const back=EDITSHIP;
+  const backh=EDITBACK; EDITBACK=null;
   NEWSHIP=null; EDITSHIP=null; EDITOLD={};
-  location.hash=back?('S-'+back):'';
+  location.hash=backh||(back?('S-'+back):'');
 };
 const WDAY=['日','月','火','水','木','金','土'];
 function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -1203,8 +1205,11 @@ window.submitShip=async function(){
           created_by:localStorage.getItem('qr_who')||MENAME},
         p_lines:NEWSHIP.lines.map(l=>({shelf_code:l.shelf,item_id:l.item_id,qty:l.qty}))})});
       if(r&&r.ok){
+        const backh=EDITBACK||('S-'+sid); EDITBACK=null;
         NEWSHIP=null;EDITSHIP=null;EDITOLD={};
-        await loadAll();location.hash='S-'+sid;render();toast('修正を保存しました（在庫を再調整）');
+        await loadAll();
+        if(location.hash!=='#'+backh)location.hash=backh; else render();
+        toast('修正を保存しました（在庫を再調整）');
       }else{
         toast(r&&r.error==='forbidden'?'権限がありません（管理者のみ）':'エラー: 保存できませんでした');
       }
@@ -1323,7 +1328,8 @@ function renderMerged(ids){
       ?`<div style="margin:4px 0 2px;padding:8px 12px;background:#e3ecfb;border:1px solid #c3d9ec;border-radius:8px;font-size:.8rem">🧰 <b>使用完了</b>　報告者 <b>${esc(sp.used_by||'')}</b> ・ ${esc(fmtDT(sp.used_at))}　${leftS?`<b style="color:var(--red)">残あり: ${leftS}</b>`:'残なし（全て使用）'}${sp.use_note?`　📝 ${esc(sp.use_note)}`:''}</div>`
       :'');
     return `<h3 style="margin:16px 0 6px;font-size:1rem">📦 箱 ${bi+1}／${sps.length} — リストNo. S-${sp.id}
-        <span class="badge ${sp.used_at?'bu':sp.status==='received'?'bg':'ba'}" style="font-size:.68rem">${sp.used_at?'使用完了':sp.status==='received'?'受領済':'受領待ち'}</span></h3>
+        <span class="badge ${sp.used_at?'bu':sp.status==='received'?'bg':'ba'}" style="font-size:.68rem">${sp.used_at?'使用完了':sp.status==='received'?'受領済':'受領待ち'}</span>
+        ${can('ship_edit')?`<button class="bset noprint" style="padding:4px 11px;font-size:.74rem;margin-left:6px;vertical-align:2px" onclick="editShip(${sp.id})">✏️ 修正</button>`:''}</h3>
       <table><tr><th style="width:34px">No</th><th style="width:74px">QR</th><th>品名・型番</th><th style="width:104px">数量</th></tr>${rows}</table>
       ${rstate}`;
   }).join('');
@@ -1464,8 +1470,9 @@ window.resetReceipt=async function(sid,mode){
     const r=await api('rpc/qr_reset_receipt',{method:'POST',body:JSON.stringify({p_id:sid,p_mode:mode,p_reason:reason})});
     if(r&&r.ok){
       await loadAll();
+      const backh=EDITBACK||('S-'+sid); EDITBACK=null;
       NEWSHIP=null;EDITSHIP=null;EDITOLD={};
-      if(location.hash!=='#S-'+sid)location.hash='S-'+sid; else render();
+      if(location.hash!=='#'+backh)location.hash=backh; else render();
       toast(mode==='usage'?`S-${sid} の使用報告を取り消しました`:`S-${sid} の受領記録を取り消しました（受領待ちに戻りました）`);
     }else{
       toast(r&&r.error==='forbidden'?'権限がありません（管理者のみ）':'エラー: 取り消せませんでした');
