@@ -14,6 +14,7 @@ header .t{font-size:1.15rem;font-weight:800}
 header .s{font-size:.75rem;opacity:.8}
 header a{color:#cfe3f5;font-size:.78rem;text-decoration:none}
 .wrap{max-width:640px;margin:0 auto;padding:12px}
+.wrap.wide{max-width:1500px}
 .chips{display:flex;gap:8px;margin:4px 0 12px;flex-wrap:wrap}
 .chip{border-radius:20px;padding:4px 14px;font-size:.8rem;font-weight:700}
 .cg{background:var(--greenbg);color:var(--green)}.ca{background:var(--amberbg);color:var(--amber)}
@@ -149,6 +150,18 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 .pk{display:flex;gap:9px;align-items:center}
 .pkt{width:42px;height:42px;border-radius:6px;object-fit:cover;flex-shrink:0;border:1px solid var(--line)}
 .pkt-e{width:42px;height:42px;border-radius:6px;border:1px dashed #d3dee9;flex-shrink:0}
+/* 資材データ（パッキング） */
+.ptw{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:10px}
+.ptbl{width:100%;border-collapse:collapse;font-size:.82rem;min-width:980px}
+.ptbl th{background:#16324f;color:#fff;padding:8px 8px;font-size:.74rem;white-space:nowrap;cursor:pointer;user-select:none;position:sticky;top:0}
+.ptbl td{border-bottom:1px solid #e2e8f0;padding:7px 8px;vertical-align:top;line-height:1.5}
+.ptbl tr.pk1 td{background:#e8f6ec}.ptbl tr.pk2 td{background:#fdeaea}.ptbl tr.pk3 td{background:#e7eefb}.ptbl tr.pk4 td{background:#fdf3e0}.ptbl tr.pk5 td{background:#f1eafc}
+.ptbl tr:hover td{filter:brightness(.97)}
+.pinfo{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#2458a6;color:#fff;font-size:.68rem;font-weight:800;cursor:pointer;margin-left:6px;flex-shrink:0}
+.pthumb{width:38px;height:38px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer}
+.pchip{display:inline-block;background:#eef4fb;color:#2458a6;border-radius:10px;padding:2px 9px;font-size:.72rem;font-weight:700;margin:2px 3px 0 0}
+.ptabbtn{padding:8px 14px;border-radius:9px 9px 0 0;border:1px solid var(--line);border-bottom:none;background:#e8edf3;font-weight:700;font-size:.82rem;cursor:pointer;color:#475569}
+.ptabbtn.on{background:#16324f;color:#fff;border-color:#16324f}
 .grphead{display:flex;align-items:center;gap:10px;margin:16px 0 6px;flex-wrap:nowrap}
 .grphead .gtitle{flex:1 1 auto;min-width:0;font-weight:800;color:var(--navy);font-size:.95rem;cursor:pointer}
 .grphead .gmerge{margin-left:auto;flex-shrink:0;padding:7px 14px;font-size:.8rem;white-space:nowrap}
@@ -160,7 +173,7 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
   <div style="display:flex;justify-content:space-between;align-items:center">
     <div><div class="t" id="hTitle">📦 QR棚管理</div><div class="s" id="hSub">しろくま電力 購買部 ・ 野田倉庫</div></div>
     <div id="hNav" style="display:grid;grid-template-columns:auto auto;gap:6px 18px;justify-content:end;white-space:nowrap;flex-shrink:0">
-      <a href="#log">📊 記録</a><a href="#ships">🚚 出荷</a>
+      <a href="#log">📊 記録</a><a href="#ships">🚚 出荷</a><a href="#pack">📦 資材</a>
       <a href="#approvals" id="hAppr">✅ 承認</a><a href="#" id="hHome">🏠 全体</a>
       <a href="#settings" id="hSet" style="display:none">⚙ 設定</a>
     </div>
@@ -182,6 +195,7 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
   </div>
 </div>
 <input type="file" id="phFile" accept="image/*" style="display:none">
+<input type="file" id="ppFile" accept="image/*" style="display:none">
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
@@ -260,6 +274,7 @@ function siteTxt(t){return t.site?(t.kind==='in'?'仕入: ':'→ ')+esc(t.site):
 function render(){
   const tip=$('ctip'); if(tip)tip.style.display='none';
   const nav=$('hNav'); if(nav)nav.style.display='';
+  $('app').classList.toggle('wide',decodeURIComponent(location.hash.replace('#',''))==='pack');
   const hs=$('hSet'); if(hs)hs.style.display=ISADMIN?'':'none';
   const n=pendingReqs().length+(ISADMIN?pendingARs().length+NEWM.length:0);
   $('hAppr').textContent=n?`✅ 承認(${n})`:'✅ 承認';
@@ -272,6 +287,7 @@ function render(){
   if(h==='approvals'){renderApprovals();window.scrollTo(0,0);return;}
   if(h==='newship'){if(!can('ship_create')){toast('権限がありません');location.hash='';return;}renderNewShip();window.scrollTo(0,0);return;}
   if(h==='ships'){renderShips();window.scrollTo(0,0);return;}
+  if(h==='pack'){renderPackPage();window.scrollTo(0,0);return;}
   if(h==='log'){renderLog();window.scrollTo(0,0);return;}
   if(h.startsWith('S-')){
     const sp=SHIPS.find(x=>x.id===+h.slice(2));
@@ -2166,6 +2182,251 @@ window.rcptgUseSubmit=async function(){
   const leftTxt=items.filter(i=>leftMap[i.item_id]>0).map(i=>i.name+'×'+leftMap[i.item_id]).join('、');
   if(!confirm(anyLeft?`残った資材: ${leftTxt}\nこの内容で使用報告しますか？（${unused.length}箱分）`:`残なし（すべて使用）として報告します。\nよろしいですか？（${unused.length}箱分）`))return;
   await rcptgSendUsage(leftMap);
+};
+
+/* ---------- 📦 資材データ（パッキングシステム統合） ---------- */
+let PACKD=null,PACKMETA=null,PACKPH=[],PACKTAB='master',PACKQ='',PACKF={pkg:'',arr:'',status:'',po:'',box:''},PACKSORT={col:'',dir:1},PACKLEG=false,PACKILANG='ja';
+async function loadPack(force){
+  if(PACKD&&!force)return;
+  const [meta,rows,phs]=await Promise.all([
+    api('qr_pack_meta?select=key,value'),
+    api('qr_pack_rows?select=id,tab,sort,data,has_info&order=tab,sort&limit=2000'),
+    api('qr_pack_photos?select=*&order=row_id,sort&limit=3000')
+  ]);
+  PACKMETA=(meta||[]).find(x=>x.key==='board')?.value||{tabs:[]};
+  PACKD=rows||[]; PACKPH=phs||[];
+}
+function packTabDef(k){return (PACKMETA?.tabs||[]).find(t=>t.key===k);}
+function packPkgClass(pkg){const m=String(pkg||'').match(/[①②③④⑤]/);return m?({'①':'pk1','②':'pk2','③':'pk3','④':'pk4','⑤':'pk5'})[m[0]]:'';}
+function packPhotos(rid){return PACKPH.filter(p=>p.row_id===rid);}
+function packRows(){
+  let list=PACKD.filter(r=>r.tab===PACKTAB);
+  const q=PACKQ.toLowerCase();
+  if(q)list=list.filter(r=>JSON.stringify(r.data).toLowerCase().includes(q));
+  if(PACKTAB==='master'){
+    Object.entries(PACKF).forEach(([k,v])=>{if(v)list=list.filter(r=>String(r.data[k]||'')===v);});
+    if(PACKSORT.col){
+      const c=PACKSORT.col,d=PACKSORT.dir;
+      list=list.slice().sort((a,b)=>{
+        const av=String(a.data[c]||''),bv=String(b.data[c]||'');
+        const an=parseFloat(av),bn=parseFloat(bv);
+        if(!isNaN(an)&&!isNaN(bn))return (an-bn)*d;
+        return av.localeCompare(bv,'ja')*d;
+      });
+    }
+  }
+  return list;
+}
+window.setPackTab=function(t){PACKTAB=t;PACKQ='';PACKF={pkg:'',arr:'',status:'',po:'',box:''};PACKSORT={col:'',dir:1};renderPack();};
+window.packSort=function(c){if(PACKSORT.col===c)PACKSORT.dir*=-1;else PACKSORT={col:c,dir:1};renderPack();};
+function packUniq(col){return [...new Set(PACKD.filter(r=>r.tab==='master').map(r=>String(r.data[col]||'')).filter(Boolean))].sort();}
+function packPhotoCell(r){
+  const phs=packPhotos(r.id);
+  return `<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+    ${phs.map(p=>`<img class="pthumb" loading="lazy" src="${esc(p.url)}" onclick="event.stopPropagation();packPhView(${p.id})">`).join('')}
+    ${ISADMIN?`<button class="bset" style="padding:3px 8px;font-size:.72rem" onclick="event.stopPropagation();packPhStart(${r.id})">＋</button>`:''}
+  </div>`;
+}
+async function renderPackPage(){
+  $('hTitle').textContent='📦 資材データ';
+  if(!PACKD){
+    $('app').innerHTML='<div class="loading">読み込み中…</div>';
+    try{await loadPack();}catch(e){console.error(e);$('app').innerHTML='<div class="empty">読み込みエラー。通信環境をご確認ください。</div>';return;}
+  }
+  renderPack();
+}
+function renderPack(){
+  const tabs=PACKMETA?.tabs||[];
+  const list=packRows();
+  const cnt=k=>PACKD.filter(r=>r.tab===k).length;
+  const tabBar=`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:0">
+    ${tabs.map(t=>`<button class="ptabbtn ${PACKTAB===t.key?'on':''}" onclick="setPackTab('${t.key}')">${esc(t.name)} <span style="font-weight:400">${cnt(t.key)}</span></button>`).join('')}
+  </div>`;
+  const legend=(PACKMETA?.legend||[]),questions=(PACKMETA?.questions||[]);
+  const legCard=`<div class="card" style="margin-top:10px;border-color:#eeddb5;background:#fffdf5;cursor:pointer" onclick="PACKLEG=!PACKLEG;renderPack()">
+      <b style="font-size:.85rem">${PACKLEG?'▾':'▸'} 凡例・確認事項</b>
+      ${PACKLEG?`<div style="font-size:.8rem;margin-top:6px;line-height:1.7">${legend.map(l=>`<div><b>${esc(l[0])}</b> ${esc(l[1])}</div>`).join('')}
+        <div style="margin-top:6px;color:var(--gray)"><b>確認事項:</b>${questions.map(qq=>`<div>・${esc(qq)}</div>`).join('')}</div>`:''}
+    </div>`;
+  const td=packTabDef(PACKTAB)||{};
+  let filterBar='',table='';
+  if(PACKTAB==='master'){
+    const sel=(id,col,label)=>`<select onchange="PACKF.${col}=this.value;renderPack()" style="padding:8px;border:1.5px solid var(--line);border-radius:8px;font-size:.8rem">
+        <option value="">${label}: ALL</option>${packUniq(col).map(v=>`<option ${PACKF[col]===v?'selected':''} value="${esc(v)}">${esc(v)}</option>`).join('')}</select>`;
+    filterBar=`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
+      <input placeholder="🔍 検索…" value="${esc(PACKQ)}" oninput="PACKQ=this.value;renderPack()" style="flex:1;min-width:150px;padding:9px;border:1.5px solid var(--line);border-radius:8px;font-size:.85rem">
+      ${sel('fPkg','pkg','パッケージ')}${sel('fArr','arr','手配')}${sel('fSt','status','状態')}${sel('fPo','po','購買発注')}${sel('fBox','box','段ボール')}
+      <span style="font-size:.78rem;color:var(--gray)">表示: <b>${list.length}</b>件</span>
+      <button class="bset" style="padding:7px 12px;font-size:.78rem" onclick="packCsv()">📊 CSV出力</button>
+      ${ISADMIN?`<button class="bset" style="padding:7px 12px;font-size:.78rem;background:var(--navy);color:#fff" onclick="packEdit(null)">＋ 行追加</button>`:''}
+    </div>`;
+    const cols=td.cols||[],labels=td.labels||[];
+    const arrow=c=>PACKSORT.col===c?(PACKSORT.dir>0?' ▲':' ▼'):'';
+    table=`<div class="ptw"><table class="ptbl">
+      <tr><th style="width:30px">#</th>${cols.map((c,i)=>`<th onclick="packSort('${c}')">${esc(labels[i]||c)}${arrow(c)}</th>`).join('')}<th>写真</th>${ISADMIN?'<th style="width:66px">操作</th>':''}</tr>
+      ${list.map((r,i)=>`<tr class="${packPkgClass(r.data.pkg)}">
+        <td style="color:var(--gray)">${i+1}</td>
+        ${cols.map(c=>{
+          let v=esc(String(r.data[c]??'')).replace(/\n/g,'<br>');
+          if(c==='item'&&r.has_info)v=`<b>${v}</b><span class="pinfo" onclick="event.stopPropagation();packInfo(${r.id})">i</span>`;
+          else if(c==='item')v=`<b>${v}</b>`;
+          return `<td>${v}</td>`;
+        }).join('')}
+        <td>${packPhotoCell(r)}</td>
+        ${ISADMIN?`<td><button class="bset" style="padding:3px 8px;font-size:.72rem" onclick="packEdit(${r.id})">✏️</button> <button class="bset" style="padding:3px 8px;font-size:.72rem;color:var(--red)" onclick="packDel(${r.id})">🗑</button></td>`:''}
+      </tr>`).join('')}
+    </table></div>`;
+  }else{
+    const hdr=(td.header||[]).slice(0,-1); // 写真列は別管理
+    filterBar=`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
+      ${(td.meta||[]).map(m=>`<span class="chip cn">${esc(m)}</span>`).join('')}
+      <input placeholder="🔍 検索…" value="${esc(PACKQ)}" oninput="PACKQ=this.value;renderPack()" style="flex:1;min-width:150px;padding:9px;border:1.5px solid var(--line);border-radius:8px;font-size:.85rem">
+      <span style="font-size:.78rem;color:var(--gray)">表示: <b>${list.length}</b>件</span>
+      <button class="bset" style="padding:7px 12px;font-size:.78rem" onclick="packCsv()">📊 CSV出力</button>
+      ${ISADMIN?`<button class="bset" style="padding:7px 12px;font-size:.78rem;background:var(--navy);color:#fff" onclick="packEdit(null)">＋ 行追加</button>`:''}
+    </div>`;
+    table=`<div class="ptw"><table class="ptbl" style="min-width:760px">
+      <tr><th style="width:30px">#</th>${hdr.map(hh=>`<th style="cursor:default">${esc(hh)}</th>`).join('')}<th>写真</th>${ISADMIN?'<th style="width:66px">操作</th>':''}</tr>
+      ${list.map((r,i)=>`<tr>
+        <td style="color:var(--gray)">${i+1}</td>
+        ${hdr.map((_,ci)=>`<td>${esc(String((r.data.cells||[])[ci]??'')).replace(/\n/g,'<br>')}</td>`).join('')}
+        <td>${packPhotoCell(r)}</td>
+        ${ISADMIN?`<td><button class="bset" style="padding:3px 8px;font-size:.72rem" onclick="packEdit(${r.id})">✏️</button> <button class="bset" style="padding:3px 8px;font-size:.72rem;color:var(--red)" onclick="packDel(${r.id})">🗑</button></td>`:''}
+      </tr>`).join('')}
+    </table></div>`;
+  }
+  $('app').innerHTML=`${tabBar}${legCard}${filterBar}${table}
+    <div class="cap" style="margin-top:8px">${ISADMIN?'✏️で行を編集できます（管理者）。':'閲覧専用です。修正が必要な場合は購買部までご連絡ください。'}高圧蓄電池資材 パッキングシステムのデータをこのサイトに統合したものです。</div>`;
+}
+/* ---- ⓘ 資材詳細 ---- */
+window.packInfo=async function(id){
+  let info=null;
+  try{const r=await api('qr_pack_rows?select=info&id=eq.'+id);info=r&&r[0]&&r[0].info;}catch(e){}
+  if(!info){toast('詳細情報を取得できませんでした');return;}
+  window._PINFO=info; packInfoRender();
+};
+window.packInfoLang=function(l){PACKILANG=l;packInfoRender();};
+function packInfoRender(){
+  const d=window._PINFO; if(!d)return;
+  const lg=PACKILANG,alt=lg==='ja'?'ko':'ja';
+  const LBL=lg==='ja'?{use:'🔧 何をするもの？',perf:'📈 性能・仕様',eff:'✨ 効果',an:'💡 例えると'}:{use:'🔧 무엇을 하는 것?',perf:'📈 성능·사양',eff:'✨ 효과',an:'💡 비유하면'};
+  const nm=lg==='ja'?d.jp:(d.ko||d.jp), sub=lg==='ja'?(d.ko||''):d.jp;
+  const chips=(d.chips&&(d.chips[lg]||d.chips.ja)||[]).map(c=>`<span class="pchip">${c}</span>`).join('');
+  const sec=(key,label)=>{const v=d[key]&&(d[key][lg]||d[key].ja);return v?`<div style="margin-top:10px"><b style="font-size:.82rem">${label}</b><div style="font-size:.83rem;line-height:1.7;margin-top:3px">${v}</div></div>`:'';};
+  openMd(`<div style="display:flex;align-items:center;gap:10px">
+      <div style="width:44px;height:44px;border-radius:10px;background:${d.color||'#16324f'};display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0">${d.emoji||'📦'}</div>
+      <div style="flex:1"><b style="font-size:1rem">${esc(nm||'')}</b><div style="font-size:.75rem;color:var(--gray)">${esc(sub||'')}</div></div>
+      <div style="display:flex;gap:4px"><button class="bset" style="padding:4px 10px;font-size:.72rem;${lg==='ja'?'background:var(--navy);color:#fff':''}" onclick="packInfoLang('ja')">日本語</button><button class="bset" style="padding:4px 10px;font-size:.72rem;${lg==='ko'?'background:var(--navy);color:#fff':''}" onclick="packInfoLang('ko')">한국어</button></div>
+    </div>
+    <div style="margin-top:8px">${chips}</div>
+    ${sec('use',LBL.use)}${sec('perf',LBL.perf)}${sec('eff',LBL.eff)}${sec('analogy',LBL.an)}
+    <div class="mact"><button class="mcancel" onclick="closeMd()">閉じる</button></div>`);
+}
+/* ---- 行の編集（管理者のみ） ---- */
+window.packEdit=function(id){
+  if(!ISADMIN){toast('権限がありません（管理者のみ）');return;}
+  const td=packTabDef(PACKTAB)||{};
+  const r=id?PACKD.find(x=>x.id===id):null;
+  let fields='';
+  if(PACKTAB==='master'){
+    const cols=td.cols||[],labels=td.labels||[];
+    fields=cols.map((c,i)=>{
+      const v=r?String(r.data[c]??''):'';
+      if(c==='memo')return `<label style="font-size:.74rem;color:var(--gray);display:block;margin-top:8px">${esc(labels[i])}</label><textarea id="pe_${c}" rows="3" style="width:100%;padding:9px;border:1.5px solid var(--line);border-radius:8px;font-size:.9rem">${esc(v)}</textarea>`;
+      return `<label style="font-size:.74rem;color:var(--gray);display:block;margin-top:8px">${esc(labels[i])}</label><input id="pe_${c}" value="${esc(v)}" style="width:100%;padding:9px;border:1.5px solid var(--line);border-radius:8px;font-size:.9rem">`;
+    }).join('');
+  }else{
+    const hdr=(td.header||[]).slice(0,-1);
+    fields=hdr.map((hh,ci)=>{
+      const v=r?String((r.data.cells||[])[ci]??''):'';
+      return `<label style="font-size:.74rem;color:var(--gray);display:block;margin-top:8px">${esc(hh)}</label><textarea id="pe_c${ci}" rows="2" style="width:100%;padding:9px;border:1.5px solid var(--line);border-radius:8px;font-size:.9rem">${esc(v)}</textarea>`;
+    }).join('');
+  }
+  openMd(`<h3>${id?'✏️ 行の編集':'＋ 行の追加'} — ${esc(td.name||'')}</h3>
+    <div style="max-height:60vh;overflow-y:auto;padding-right:4px">${fields}</div>
+    <div class="mact"><button class="mcancel" onclick="closeMd()">キャンセル</button><button class="mok" onclick="packSave(${id||'null'})">💾 保存</button></div>`);
+};
+window.packSave=async function(id){
+  const td=packTabDef(PACKTAB)||{};
+  let data;
+  if(PACKTAB==='master'){
+    data={};(td.cols||[]).forEach(c=>{data[c]=($('pe_'+c)?.value||'').trim();});
+    if(!data.item){toast('品名を入力してください');return;}
+  }else{
+    const hdr=(td.header||[]).slice(0,-1);
+    data={cells:hdr.map((_,ci)=>($('pe_c'+ci)?.value||'').trim())};
+    if(!data.cells.some(Boolean)){toast('内容を入力してください');return;}
+  }
+  const who=localStorage.getItem('qr_who')||MENAME;
+  try{
+    if(id){
+      await api('qr_pack_rows?id=eq.'+id,{method:'PATCH',body:JSON.stringify({data,updated_by:who,updated_at:new Date().toISOString()})});
+    }else{
+      const mx=Math.max(0,...PACKD.filter(r=>r.tab===PACKTAB).map(r=>r.sort));
+      await api('qr_pack_rows',{method:'POST',body:JSON.stringify({tab:PACKTAB,sort:mx+10,data,updated_by:who})});
+    }
+    closeMd();await loadPack(true);renderPack();toast(id?'保存しました':'行を追加しました');
+  }catch(e){toast('エラー: 保存できませんでした（権限をご確認ください）');console.error(e);}
+};
+window.packDel=async function(id){
+  if(!ISADMIN){toast('権限がありません（管理者のみ）');return;}
+  const r=PACKD.find(x=>x.id===id);
+  const nm=r?(r.data.item||(r.data.cells||[]).join(' ').slice(0,20)):'';
+  if(!confirm(`この行を削除します。\n${nm}\nよろしいですか？`))return;
+  try{
+    await api('qr_pack_rows?id=eq.'+id,{method:'DELETE'});
+    await loadPack(true);renderPack();toast('削除しました');
+  }catch(e){toast('エラー: 削除できませんでした');console.error(e);}
+};
+/* ---- 写真 ---- */
+let PP_TARGET=null;
+window.packPhStart=function(rid){
+  if(!ISADMIN){toast('権限がありません（管理者のみ）');return;}
+  PP_TARGET=rid;$('ppFile').value='';$('ppFile').click();
+};
+$('ppFile').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f||PP_TARGET==null)return;
+  toast('写真をアップロード中…');
+  try{
+    const blob=await shrink(f,800,.72);
+    const name='pack/p'+PP_TARGET+'_'+Date.now()+'.jpg';
+    const r=await fetch('https://ndbqaphghlfcsfkfwbnn.supabase.co/storage/v1/object/qr-photos/'+name,
+      {method:'POST',headers:{'apikey':KEY,'Authorization':H.Authorization,'Content-Type':'image/jpeg','x-upsert':'true'},body:blob});
+    if(!r.ok)throw new Error(await r.text());
+    const url='https://ndbqaphghlfcsfkfwbnn.supabase.co/storage/v1/object/public/qr-photos/'+name;
+    await api('qr_pack_photos',{method:'POST',body:JSON.stringify({row_id:PP_TARGET,url,sort:packPhotos(PP_TARGET).length,created_by:localStorage.getItem('qr_who')||MENAME})});
+    await loadPack(true);renderPack();toast('写真を追加しました');
+  }catch(err){toast('写真の登録に失敗しました');console.error(err);}
+  finally{PP_TARGET=null;}
+});
+window.packPhView=function(pid){
+  const p=PACKPH.find(x=>x.id===pid); if(!p)return;
+  openMd(`<div style="text-align:center"><img src="${esc(p.url)}" style="max-width:100%;max-height:70vh;border-radius:8px"></div>
+    <div class="mact">${ISADMIN?`<button class="mcancel" style="color:var(--red)" onclick="packPhDel(${p.id})">🗑 削除</button>`:''}<button class="mcancel" onclick="closeMd()">閉じる</button></div>`);
+};
+window.packPhDel=async function(pid){
+  if(!confirm('この写真を削除しますか？'))return;
+  try{await api('qr_pack_photos?id=eq.'+pid,{method:'DELETE'});closeMd();await loadPack(true);renderPack();toast('写真を削除しました');}
+  catch(e){toast('エラー: 削除できませんでした');}
+};
+/* ---- CSV出力 ---- */
+window.packCsv=function(){
+  const td=packTabDef(PACKTAB)||{};
+  const list=packRows();
+  let head,rows;
+  if(PACKTAB==='master'){
+    head=(td.labels||[]);
+    rows=list.map(r=>(td.cols||[]).map(c=>String(r.data[c]??'')));
+  }else{
+    head=(td.header||[]).slice(0,-1);
+    rows=list.map(r=>head.map((_,ci)=>String((r.data.cells||[])[ci]??'')));
+  }
+  const csv='﻿'+[head,...rows].map(rr=>rr.map(v=>'"'+v.replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='資材データ_'+(td.name||PACKTAB)+'_'+todayStr()+'.csv';
+  a.click();URL.revokeObjectURL(a.href);
+  toast('CSVを出力しました（Excelで開けます）');
 };
 
 /* ---------- 認証（Googleログイン + 承認制アクセス） ---------- */
