@@ -155,8 +155,9 @@ h2{font-size:.95rem;color:var(--navy);margin:14px 0 8px}
 .ptbl{width:100%;border-collapse:collapse;font-size:.82rem;min-width:980px}
 .ptbl th{background:#16324f;color:#fff;padding:8px 8px;font-size:.74rem;white-space:nowrap;cursor:pointer;user-select:none;position:sticky;top:0}
 .ptbl td{border-bottom:1px solid #e2e8f0;padding:7px 8px;vertical-align:top;line-height:1.5}
-.ptbl tr.pk1 td{background:#e8f6ec}.ptbl tr.pk2 td{background:#fdeaea}.ptbl tr.pk3 td{background:#e7eefb}.ptbl tr.pk4 td{background:#fdf3e0}.ptbl tr.pk5 td{background:#f1eafc}
-.ptbl tr:hover td{filter:brightness(.97)}
+.ptbl tr.pk1 td{background:#d4e9da}.ptbl tr.pk2 td{background:#f6d9d9}.ptbl tr.pk3 td{background:#d6e4f5}.ptbl tr.pk4 td{background:#f8e6c6}.ptbl tr.pk5 td{background:#e1d6ef}.ptbl tr.pk0 td{background:#dee4ea}
+.ptbl tr:hover td{filter:brightness(.96)}
+.ptbl td.pmk{text-align:center;font-weight:800;font-size:.92rem}
 .pinfo{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#2458a6;color:#fff;font-size:.68rem;font-weight:800;cursor:pointer;margin-left:6px;flex-shrink:0}
 .pthumb{width:38px;height:38px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer}
 .pchip{display:inline-block;background:#eef4fb;color:#2458a6;border-radius:10px;padding:2px 9px;font-size:.72rem;font-weight:700;margin:2px 3px 0 0}
@@ -2197,7 +2198,17 @@ async function loadPack(force){
   PACKD=rows||[]; PACKPH=phs||[];
 }
 function packTabDef(k){return (PACKMETA?.tabs||[]).find(t=>t.key===k);}
-function packPkgClass(pkg){const m=String(pkg||'').match(/[①②③④⑤]/);return m?({'①':'pk1','②':'pk2','③':'pk3','④':'pk4','⑤':'pk5'})[m[0]]:'';}
+function packPkgClass(pkg){const m=String(pkg||'').match(/[①②③④⑤]/);return m?({'①':'pk1','②':'pk2','③':'pk3','④':'pk4','⑤':'pk5'})[m[0]]:'pk0';}
+function packMarkColor(v){
+  v=String(v||'').trim();
+  if(v==='〇'||v==='○')return '#2f7d5b';
+  if(v==='◯')return '#1c5d8c';
+  if(v==='×')return '#b4452f';
+  if(v==='△')return '#c9821a';
+  if(v==='★')return '#1c5d8c';
+  if(['①','②','③','④'].includes(v))return '#1f8a8a';
+  return '#5b6b7a';
+}
 function packPhotos(rid){return PACKPH.filter(p=>p.row_id===rid);}
 function packRows(){
   let list=PACKD.filter(r=>r.tab===PACKTAB);
@@ -2267,9 +2278,11 @@ function renderPack(){
       ${list.map((r,i)=>`<tr class="${packPkgClass(r.data.pkg)}">
         <td style="color:var(--gray)">${i+1}</td>
         ${cols.map(c=>{
-          let v=esc(String(r.data[c]??'')).replace(/\n/g,'<br>');
+          const raw=String(r.data[c]??'');
+          let v=esc(raw).replace(/\n/g,'<br>');
           if(c==='item'&&r.has_info)v=`<b>${v}</b><span class="pinfo" onclick="event.stopPropagation();packInfo(${r.id})">i</span>`;
           else if(c==='item')v=`<b>${v}</b>`;
+          if(c==='po'||c==='box')return `<td class="pmk" style="color:${packMarkColor(raw)}">${v}</td>`;
           return `<td>${v}</td>`;
         }).join('')}
         <td>${packPhotoCell(r)}</td>
